@@ -20,6 +20,8 @@ pub struct Collector {
     /// Cache: Win32 process data (priority, threads) - updated every 3 ticks
     win_data_cache: HashMap<u32, winapi::WinProcessData>,
     win_data_cache_ticks: u64,
+    /// Cache: per-process CPU times for TIME+ (updated every 3 ticks)
+    process_times_cache: HashMap<u32, u64>,
     /// Previous I/O counters for rate calculation: PID -> (read_bytes, write_bytes, timestamp)
     prev_io_counters: HashMap<u32, (u64, u64, std::time::Instant)>,
     /// Previous network totals for rate calculation
@@ -65,6 +67,7 @@ impl Collector {
             user_name_cache: HashMap::new(),
             win_data_cache: HashMap::new(),
             win_data_cache_ticks: 0,
+            process_times_cache: HashMap::new(),
             prev_io_counters: HashMap::new(),
             prev_net_rx: 0,
             prev_net_tx: 0,
@@ -310,11 +313,10 @@ impl Collector {
 
         // Batch-collect per-process CPU times for TIME+ sub-second precision
         // Only every 3 ticks (aligned with win_data refresh) to save overhead
-        let process_times = if self.win_data_cache_ticks % 3 == 1 {
-            winapi::batch_process_times(&all_pids)
-        } else {
-            HashMap::new()
-        };
+        // IMPORTANT: cache the result so cpu_time_100ns doesn't drop to 0 between refreshes
+        if self.win_data_cache_ticks % 3 == 1 {
+            self.process_times_cache = winapi::batch_process_times(&all_pids);
+        }
 
         // Build a set of current PIDs for dead PID cleanup
         let current_pids: std::collections::HashSet<u32> = all_pids.iter().copied().collect();
@@ -372,8 +374,8 @@ impl Collector {
                 // Update prev counters for next tick
                 self.prev_io_counters.insert(pid, (io_read_bytes, io_write_bytes, now));
 
-                // Get high-precision CPU time for TIME+ display
-                let cpu_time_100ns = process_times.get(&pid).copied().unwrap_or(0);
+                // Get high-precision CPU time for TIME+ display (from persistent cache)
+                let cpu_time_100ns = self.process_times_cache.get(&pid).copied().unwrap_or(0);
 
                 ProcessInfo {
                     pid,
