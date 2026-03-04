@@ -112,7 +112,11 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Char('N') => app.set_sort_field(ProcessSortField::Pid),
         KeyCode::Char('I') => {
             match app.active_tab {
-                ProcessTab::Main | ProcessTab::Io => app.sort_ascending = !app.sort_ascending,
+                ProcessTab::Main | ProcessTab::Io => {
+                    app.sort_ascending = !app.sort_ascending;
+                    app.tree_view = false; // sort and tree view are mutually exclusive
+                    app.sort_processes();
+                }
                 ProcessTab::Net => { app.net_sort_ascending = !app.net_sort_ascending; app.sort_net_processes(); }
                 ProcessTab::Gpu => { app.gpu_sort_ascending = !app.gpu_sort_ascending; app.sort_gpu_processes(); }
             }

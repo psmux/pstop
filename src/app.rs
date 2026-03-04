@@ -682,6 +682,7 @@ impl App {
     }
 
     /// Toggle sort field for the current tab (cycle through or set specific)
+    /// Like htop, activating a sort field disables tree view (they are mutually exclusive).
     pub fn set_sort_field(&mut self, field: ProcessSortField) {
         match self.active_tab {
             ProcessTab::Main | ProcessTab::Io => {
@@ -691,6 +692,9 @@ impl App {
                     self.sort_field = field;
                     self.sort_ascending = false;
                 }
+                // Sorting and tree view are mutually exclusive (htop behaviour).
+                self.tree_view = false;
+                self.sort_processes();
             }
             ProcessTab::Net => {
                 if self.net_sort_field == field {

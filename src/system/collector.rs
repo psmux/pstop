@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use sysinfo::{System, ProcessStatus as SysProcessStatus, ProcessesToUpdate, ProcessRefreshKind, Networks};
+use sysinfo::{System, ProcessStatus as SysProcessStatus, ProcessesToUpdate, Networks};
 
 use crate::app::App;
 use crate::system::cpu::{CpuCore, CpuInfo};
@@ -92,17 +92,10 @@ impl Collector {
         // Refresh only what we need - much faster than refresh_all()
         self.sys.refresh_cpu_all();
         self.sys.refresh_memory();
-        // In sysinfo v0.38, refresh_processes_specifics lets us control what gets refreshed.
-        // Always remove dead processes (2nd param = true).
-        // Only include name/exe/cmd when update_process_names is true (expensive).
-        let mut refresh_kind = ProcessRefreshKind::nothing()
-            .with_cpu()
-            .with_memory()
-            .with_disk_usage();
-        if app.update_process_names {
-            refresh_kind = refresh_kind.with_exe(sysinfo::UpdateKind::Always);
-        }
-        self.sys.refresh_processes_specifics(ProcessesToUpdate::All, true, refresh_kind);
+        // In sysinfo v0.38, 2nd param = remove dead processes (always true).
+        // Use refresh_processes for full process data every tick to ensure
+        // cpu_usage deltas are calculated correctly.
+        self.sys.refresh_processes(ProcessesToUpdate::All, true);
 
         // Sample real CPU user/kernel split via GetSystemTimes
         let (user_frac, kernel_frac) = self.cpu_time_split.sample();
