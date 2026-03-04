@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use sysinfo::{System, ProcessStatus as SysProcessStatus, ProcessesToUpdate, Networks};
+use sysinfo::{System, ProcessStatus as SysProcessStatus, ProcessesToUpdate, ProcessRefreshKind, Networks};
 
 use crate::app::App;
 use crate::system::cpu::{CpuCore, CpuInfo};
@@ -92,8 +92,17 @@ impl Collector {
         // Refresh only what we need - much faster than refresh_all()
         self.sys.refresh_cpu_all();
         self.sys.refresh_memory();
-        // update_process_names: when false, skip re-fetching exe/name/command (expensive)
-        self.sys.refresh_processes(ProcessesToUpdate::All, app.update_process_names);
+        // In sysinfo v0.38, refresh_processes_specifics lets us control what gets refreshed.
+        // Always remove dead processes (2nd param = true).
+        // Only include name/exe/cmd when update_process_names is true (expensive).
+        let mut refresh_kind = ProcessRefreshKind::nothing()
+            .with_cpu()
+            .with_memory()
+            .with_disk_usage();
+        if app.update_process_names {
+            refresh_kind = refresh_kind.with_exe(sysinfo::UpdateKind::Always);
+        }
+        self.sys.refresh_processes_specifics(ProcessesToUpdate::All, true, refresh_kind);
 
         // Sample real CPU user/kernel split via GetSystemTimes
         let (user_frac, kernel_frac) = self.cpu_time_split.sample();
@@ -294,7 +303,11 @@ impl Collector {
                 let ppid = proc_info.parent().map(|p| p.as_u32()).unwrap_or(0);
                 let name = proc_info.name().to_string_lossy().to_string();
 
-                (pid.as_u32(), ppid, name, command, proc_info.status(), virt, resident, proc_info.cpu_usage(), mem_pct, proc_info.run_time())
+                // Sanitize cpu_usage: sysinfo can return NaN for inaccessible processes
+                let cpu = proc_info.cpu_usage();
+                let cpu_usage = if cpu.is_nan() || cpu.is_infinite() { 0.0 } else { cpu };
+
+                (pid.as_u32(), ppid, name, command, proc_info.status(), virt, resident, cpu_usage, mem_pct, proc_info.run_time())
             })
             .collect();
 

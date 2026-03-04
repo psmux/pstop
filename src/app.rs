@@ -327,8 +327,13 @@ impl App {
                 ProcessSortField::VirtMem => a.virtual_mem.cmp(&b.virtual_mem),
                 ProcessSortField::ResMem => a.resident_mem.cmp(&b.resident_mem),
                 ProcessSortField::SharedMem => a.shared_mem.cmp(&b.shared_mem),
-                ProcessSortField::Cpu => a.cpu_usage.partial_cmp(&b.cpu_usage).unwrap_or(std::cmp::Ordering::Equal),
-                ProcessSortField::Mem => a.mem_usage.partial_cmp(&b.mem_usage).unwrap_or(std::cmp::Ordering::Equal),
+                ProcessSortField::Cpu => {
+                    // Use total_cmp for NaN-safe total ordering
+                    a.cpu_usage.total_cmp(&b.cpu_usage)
+                }
+                ProcessSortField::Mem => {
+                    a.mem_usage.total_cmp(&b.mem_usage)
+                }
                 ProcessSortField::Time => {
                     // Sort by cpu_time_100ns (what TIME+ displays), falling back to run_time
                     let a_time = if a.cpu_time_100ns > 0 { a.cpu_time_100ns } else { a.run_time * 10_000_000 };
@@ -338,12 +343,16 @@ impl App {
                 ProcessSortField::Threads => a.threads.cmp(&b.threads),
                 ProcessSortField::Command => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
                 ProcessSortField::Status => a.status.cmp(&b.status),
-                ProcessSortField::IoReadRate => a.io_read_rate.partial_cmp(&b.io_read_rate).unwrap_or(std::cmp::Ordering::Equal),
-                ProcessSortField::IoWriteRate => a.io_write_rate.partial_cmp(&b.io_write_rate).unwrap_or(std::cmp::Ordering::Equal),
+                ProcessSortField::IoReadRate => {
+                    a.io_read_rate.total_cmp(&b.io_read_rate)
+                }
+                ProcessSortField::IoWriteRate => {
+                    a.io_write_rate.total_cmp(&b.io_write_rate)
+                }
                 ProcessSortField::IoRate => {
                     let a_total = a.io_read_rate + a.io_write_rate;
                     let b_total = b.io_read_rate + b.io_write_rate;
-                    a_total.partial_cmp(&b_total).unwrap_or(std::cmp::Ordering::Equal)
+                    a_total.total_cmp(&b_total)
                 }
             };
             if ascending { ord } else { ord.reverse() }
