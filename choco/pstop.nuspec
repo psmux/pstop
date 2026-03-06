@@ -8,12 +8,26 @@
     <owners>marlocarlo</owners>
     <projectUrl>https://github.com/marlocarlo/pstop</projectUrl>
     <licenseUrl>https://github.com/marlocarlo/pstop/blob/master/LICENSE</licenseUrl>
+    <iconUrl>https://cdn.jsdelivr.net/gh/marlocarlo/pstop@master/icon.png</iconUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <projectSourceUrl>https://github.com/marlocarlo/pstop</projectSourceUrl>
+    <docsUrl>https://github.com/marlocarlo/pstop#readme</docsUrl>
     <bugTrackerUrl>https://github.com/marlocarlo/pstop/issues</bugTrackerUrl>
-    <tags>htop top system-monitor process-viewer tui terminal windows rust</tags>
+    <tags>htop top system-monitor process-viewer tui terminal windows rust cli</tags>
+    <copyright>Copyright (c) marlocarlo</copyright>
     <summary>htop for Windows — beautiful, fast TUI system monitor</summary>
-    <description>pstop is a full drop-in replacement for htop on Windows. Beautiful TUI system monitor with per-core CPU bars, memory/swap/network monitoring, tree view, process management, search/filter, 7 color schemes, and full mouse support. Installs both `pstop` and `htop` commands.</description>
+    <description>pstop is a full drop-in replacement for htop on Windows. Beautiful TUI system monitor with per-core CPU bars, memory/swap/network monitoring, tree view, process management, search/filter, 7 color schemes, and full mouse support. Installs both `pstop` and `htop` commands.
+
+## Features
+- Per-core CPU bars with user/kernel split
+- Memory, Swap, Network and GPU header bars
+- Tree view with collapsible nodes
+- Search (F3) and Filter (F4)
+- 4 tab views: Main, I/O, Net, GPU
+- 7 color schemes
+- Full mouse support
+- ~1 MB binary, zero dependencies
+    </description>
     <releaseNotes>https://github.com/marlocarlo/pstop/releases</releaseNotes>
   </metadata>
   <files>

@@ -8,8 +8,13 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
+  ZIP_NAME: pstop-windows-x86_64.zip
 
 jobs:
   # ── Build release binaries ──────────────────────────────────────────
@@ -33,12 +38,19 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Extract version from tag
+      - name: Extract and verify version from tag
         id: version
         shell: pwsh
         run: |
-          $ver = "${{ github.ref_name }}".TrimStart('v')
-          echo "version=$ver" >> $env:GITHUB_OUTPUT
+          $tagVer = "${{ github.ref_name }}".TrimStart('v')
+          echo "version=$tagVer" >> $env:GITHUB_OUTPUT
+
+          # Verify Cargo.toml version matches the git tag
+          $cargoVer = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          if ($cargoVer -ne $tagVer) {
+            throw "Version mismatch: Cargo.toml has '$cargoVer' but tag is 'v$tagVer'"
+          }
+          Write-Host "Version verified: $tagVer"
 
       - name: Build release binaries
         run: cargo build --release
@@ -51,6 +63,8 @@ jobs:
         run: |
           if (-not (Test-Path target/release/pstop.exe)) { throw "pstop.exe not found" }
           if (-not (Test-Path target/release/htop.exe)) { throw "htop.exe not found" }
+          Write-Host "pstop.exe size: $((Get-Item target/release/pstop.exe).Length) bytes"
+          Write-Host "htop.exe size: $((Get-Item target/release/htop.exe).Length) bytes"
 
       - name: Create release archive
         shell: pwsh
@@ -60,21 +74,25 @@ jobs:
           Copy-Item target/release/htop.exe staging/
           Copy-Item README.md staging/
           Copy-Item LICENSE staging/
-          Compress-Archive -Path staging/* -DestinationPath pstop-windows-x86_64.zip
+          Compress-Archive -Path staging/* -DestinationPath $env:ZIP_NAME
 
       - name: Compute SHA256 checksum
         id: checksum
         shell: pwsh
         run: |
-          $hash = (Get-FileHash pstop-windows-x86_64.zip -Algorithm SHA256).Hash.ToLower()
+          $hash = (Get-FileHash $env:ZIP_NAME -Algorithm SHA256).Hash.ToLower()
           echo "sha256=$hash" >> $env:GITHUB_OUTPUT
+          # Also write a checksum file for the release
+          "$hash  $env:ZIP_NAME" | Set-Content "$env:ZIP_NAME.sha256"
           Write-Host "SHA256: $hash"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-binaries
-          path: pstop-windows-x86_64.zip
+          path: |
+            pstop-windows-x86_64.zip
+            pstop-windows-x86_64.zip.sha256
           retention-days: 5
 
   # ── Create GitHub Release ───────────────────────────────────────────
@@ -113,7 +131,9 @@ jobs:
             ```
             ${{ needs.build.outputs.sha256 }}
             ```
-          files: pstop-windows-x86_64.zip
+          files: |
+            pstop-windows-x86_64.zip
+            pstop-windows-x86_64.zip.sha256
           draft: false
           prerelease: false
 
@@ -158,21 +178,26 @@ jobs:
         with:
           name: release-binaries
 
-      - name: Compute checksum of zip
-        id: checksum
+      - name: Verify artifact integrity
+        id: verify
         shell: pwsh
         run: |
-          $hash = (Get-FileHash pstop-windows-x86_64.zip -Algorithm SHA256).Hash.ToLower()
-          echo "sha256=$hash" >> $env:GITHUB_OUTPUT
+          $expected = "${{ needs.build.outputs.sha256 }}"
+          $actual = (Get-FileHash $env:ZIP_NAME -Algorithm SHA256).Hash.ToLower()
+          if ($actual -ne $expected) {
+            throw "Checksum mismatch! Expected: $expected  Got: $actual"
+          }
+          Write-Host "Artifact checksum verified: $actual"
+          echo "sha256=$actual" >> $env:GITHUB_OUTPUT
 
       - name: Prepare Chocolatey package
         shell: pwsh
         run: |
           $version = "${{ needs.build.outputs.version }}"
-          $url = "https://github.com/${{ github.repository }}/releases/download/v${version}/pstop-windows-x86_64.zip"
-          $checksum = "${{ steps.checksum.outputs.sha256 }}"
+          $url = "https://github.com/${{ github.repository }}/releases/download/v${version}/$env:ZIP_NAME"
+          $checksum = "${{ steps.verify.outputs.sha256 }}"
 
-          # Update nuspec version (match any existing version dynamically)
+          # Update nuspec version
           $nuspec = Get-Content choco/pstop.nuspec -Raw
           $nuspec = $nuspec -replace '<version>[^<]+</version>', "<version>$version</version>"
           Set-Content choco/pstop.nuspec $nuspec
@@ -183,11 +208,51 @@ jobs:
           $install = $install -replace '__CHECKSUM__', $checksum
           Set-Content choco/tools/chocolateyinstall.ps1 $install
 
+          # Generate VERIFICATION.txt (required by Chocolatey moderation for
+          # packages that download binaries from an external URL)
+          @"
+          VERIFICATION
+
+          Verification is intended to assist the Chocolatey moderators and community
+          in verifying that this package's contents are trustworthy.
+
+          This package downloads pstop from the official GitHub Releases page:
+            $url
+
+          The SHA256 checksum embedded in chocolateyinstall.ps1 is:
+            $checksum
+
+          You can verify this yourself by downloading the zip and running:
+            (Get-FileHash pstop-windows-x86_64.zip -Algorithm SHA256).Hash
+
+          The source code is available at:
+            https://github.com/marlocarlo/pstop
+
+          The binaries are built from source using 'cargo build --release' via the
+          GitHub Actions workflow at:
+            https://github.com/marlocarlo/pstop/actions
+
+          License: MIT
+            https://github.com/marlocarlo/pstop/blob/master/LICENSE
+          "@ -replace '(?m)^          ', '' | Set-Content "choco/tools/VERIFICATION.txt"
+
+          Write-Host "=== nuspec ==="
+          Get-Content choco/pstop.nuspec
+          Write-Host "`n=== install script ==="
+          Get-Content choco/tools/chocolateyinstall.ps1
+          Write-Host "`n=== VERIFICATION.txt ==="
+          Get-Content choco/tools/VERIFICATION.txt
+
       - name: Pack Chocolatey package
         shell: pwsh
         run: |
           cd choco
           choco pack pstop.nuspec
+          # Verify the nupkg was created
+          $version = "${{ needs.build.outputs.version }}"
+          $nupkg = "pstop.${version}.nupkg"
+          if (-not (Test-Path $nupkg)) { throw "Failed to create $nupkg" }
+          Write-Host "Created: $nupkg ($((Get-Item $nupkg).Length) bytes)"
 
       - name: Push to Chocolatey
         shell: pwsh
@@ -198,7 +263,7 @@ jobs:
           cd choco
           choco push "pstop.${version}.nupkg" --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "::warning::Chocolatey push failed (package may already exist or be in moderation)"
+            Write-Host "::warning::Chocolatey push returned non-zero exit code (package may already exist or be in moderation)"
           }
 
   # ── Publish to WinGet ───────────────────────────────────────────────
@@ -212,6 +277,25 @@ jobs:
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://aka.ms/wingetcreate/latest" -OutFile wingetcreate.exe
+          Write-Host "wingetcreate downloaded"
+
+      - name: Download and verify release asset
+        id: asset
+        shell: pwsh
+        run: |
+          $version = "${{ needs.build.outputs.version }}"
+          $url = "https://github.com/${{ github.repository }}/releases/download/v${version}/$env:ZIP_NAME"
+          Write-Host "Downloading: $url"
+          Invoke-WebRequest -Uri $url -OutFile release.zip -MaximumRetryCount 3
+
+          $sha256 = (Get-FileHash release.zip -Algorithm SHA256).Hash.ToUpper()
+          $expected = "${{ needs.build.outputs.sha256 }}".ToUpper()
+          if ($sha256 -ne $expected) {
+            throw "SHA256 mismatch! Expected: $expected  Got: $sha256"
+          }
+          Write-Host "SHA256 verified: $sha256"
+          echo "sha256=$sha256" >> $env:GITHUB_OUTPUT
+          echo "url=$url" >> $env:GITHUB_OUTPUT
 
       - name: Check for existing open PRs
         id: check_pr
@@ -220,7 +304,6 @@ jobs:
           GH_TOKEN: ${{ secrets.WINGET_GH_PAT }}
         run: |
           $version = "${{ needs.build.outputs.version }}"
-          # Search for open PRs matching this package + version
           $searchQuery = "repo:microsoft/winget-pkgs is:pr is:open marlocarlo.pstop $version in:title"
           $result = gh api "search/issues?q=$([uri]::EscapeDataString($searchQuery))&per_page=5" 2>&1 | ConvertFrom-Json
           if ($result.total_count -gt 0) {
@@ -237,9 +320,9 @@ jobs:
           WINGET_GH_PAT: ${{ secrets.WINGET_GH_PAT }}
         run: |
           $version = "${{ needs.build.outputs.version }}"
-          $url = "https://github.com/${{ github.repository }}/releases/download/v${version}/pstop-windows-x86_64.zip"
+          $url = "${{ steps.asset.outputs.url }}"
 
-          Write-Host "Attempting wingetcreate update for marlocarlo.pstop v${version}..."
+          Write-Host "Submitting wingetcreate update for marlocarlo.pstop v${version}..."
           .\wingetcreate.exe update marlocarlo.pstop `
             --urls $url `
             --version $version `
@@ -247,18 +330,13 @@ jobs:
             --token $env:WINGET_GH_PAT 2>&1
 
           if ($LASTEXITCODE -eq 0) {
-            Write-Host "Successfully submitted WinGet update via wingetcreate update"
+            Write-Host "Successfully submitted WinGet update via wingetcreate"
             exit 0
           }
 
-          Write-Host "wingetcreate update failed — package may not exist yet. Creating new manifest..."
+          Write-Host "wingetcreate update failed — falling back to manual manifest submission..."
 
-          # Download the zip to compute SHA256
-          Invoke-WebRequest -Uri $url -OutFile pstop-release.zip
-          $sha256 = (Get-FileHash pstop-release.zip -Algorithm SHA256).Hash.ToUpper()
-          Write-Host "SHA256: $sha256"
-
-          # Create manifest directory structure
+          $sha256 = "${{ steps.asset.outputs.sha256 }}"
           $manifestDir = "manifests"
           New-Item -ItemType Directory -Path $manifestDir -Force
 
@@ -335,24 +413,22 @@ jobs:
           # Validate manifests with winget if available
           $wingetAvailable = Get-Command winget -ErrorAction SilentlyContinue
           if ($wingetAvailable) {
-            Write-Host "`nValidating manifests with winget validate..."
+            Write-Host "`nValidating manifests..."
             winget validate --manifest $manifestDir
             if ($LASTEXITCODE -ne 0) {
               throw "winget validate failed — manifest does not conform to schema"
             }
             Write-Host "Validation passed"
-          } else {
-            Write-Host "::warning::winget CLI not available on this runner — skipping local validation"
           }
 
           # Submit via wingetcreate
           Write-Host "`nSubmitting manifest to winget-pkgs..."
           .\wingetcreate.exe submit `
             --token $env:WINGET_GH_PAT `
-            --prtitle "New package: marlocarlo.pstop version $version" `
+            --prtitle "Update: marlocarlo.pstop version $version" `
             $manifestDir
 
           if ($LASTEXITCODE -ne 0) {
             throw "wingetcreate submit failed"
           }
-          Write-Host "Successfully submitted new WinGet package"
+          Write-Host "Successfully submitted WinGet manifest"
