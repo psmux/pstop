@@ -162,9 +162,19 @@ jobs:
 
       - name: Publish to crates.io
         if: steps.check.outputs.skip != 'true'
+        shell: pwsh
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --allow-dirty
+        run: |
+          $output = cargo publish --allow-dirty 2>&1 | Out-String
+          Write-Host $output
+          if ($LASTEXITCODE -ne 0) {
+            if ($output -match 'already exists') {
+              Write-Host "Version already published to crates.io — treating as success"
+              exit 0
+            }
+            throw "cargo publish failed with exit code $LASTEXITCODE"
+          }
 
   # ── Publish to Chocolatey ───────────────────────────────────────────
   publish-choco:
@@ -259,11 +269,17 @@ jobs:
         env:
           CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
         run: |
+          $ErrorActionPreference = 'Continue'
           $version = "${{ needs.build.outputs.version }}"
           cd choco
-          choco push "pstop.${version}.nupkg" --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY
+          $output = choco push "pstop.${version}.nupkg" --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY 2>&1 | Out-String
+          Write-Host $output
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "::warning::Chocolatey push returned non-zero exit code (package may already exist or be in moderation)"
+            if ($output -match 'already exists' -or $output -match 'submitted state' -or $output -match '409' -or $output -match '403') {
+              Write-Host "::warning::Chocolatey push blocked (package may already exist or be in moderation) — treating as success"
+              exit 0
+            }
+            throw "choco push failed with exit code $LASTEXITCODE`: $output"
           }
 
   # ── Publish to WinGet ───────────────────────────────────────────────
