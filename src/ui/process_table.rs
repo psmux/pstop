@@ -633,11 +633,12 @@ fn build_gpu_row(
 
     let total_mem = gpu_proc.dedicated_mem + gpu_proc.shared_mem;
 
-    // Look up process name from the process list
-    let proc_name = app.processes.iter()
-        .find(|p| p.pid == gpu_proc.pid)
-        .map(|p| p.name.clone())
-        .unwrap_or_else(|| format!("PID {}", gpu_proc.pid));
+    // Use process name from GpuProcessInfo (populated during collection)
+    let proc_name = if gpu_proc.name.is_empty() {
+        format!("PID {}", gpu_proc.pid)
+    } else {
+        gpu_proc.name.clone()
+    };
 
     let engine_str = if gpu_proc.engine_type.is_empty() { "---" } else { &gpu_proc.engine_type };
 

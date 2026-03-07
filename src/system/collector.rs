@@ -24,6 +24,8 @@ pub struct Collector {
     process_times_cache: HashMap<u32, u64>,
     /// Previous I/O counters for rate calculation: PID -> (read_bytes, write_bytes, timestamp)
     prev_io_counters: HashMap<u32, (u64, u64, std::time::Instant)>,
+    /// Cache: PID -> (name, command) — used when update_process_names is OFF
+    process_name_cache: HashMap<u32, (String, String)>,
     /// Previous network totals for rate calculation
     prev_net_rx: u64,
     prev_net_tx: u64,
@@ -69,6 +71,7 @@ impl Collector {
             win_data_cache_ticks: 0,
             process_times_cache: HashMap::new(),
             prev_io_counters: HashMap::new(),
+            process_name_cache: HashMap::new(),
             prev_net_rx: 0,
             prev_net_tx: 0,
             prev_net_time: None,
@@ -155,7 +158,14 @@ impl Collector {
 
         // ── GPU per-process data (GPU tab) ──
         if matches!(app.active_tab, crate::app::ProcessTab::Gpu) {
-            app.gpu_processes = self.gpu_collector.collect();
+            let mut gpu_procs = self.gpu_collector.collect();
+            // Populate process names from sysinfo process list
+            for gp in &mut gpu_procs {
+                if let Some(proc) = app.processes.iter().find(|p| p.pid == gp.pid) {
+                    gp.name = proc.name.clone();
+                }
+            }
+            app.gpu_processes = gpu_procs;
             // Sort by user's selected GPU sort field
             app.sort_gpu_processes();
 
@@ -270,6 +280,7 @@ impl Collector {
         let mut running = 0usize;
         let mut sleeping = 0usize;
         let mut total_threads = 0usize;
+        let update_names = app.update_process_names;
 
         // Collect raw process data first (no &mut self needed)
         let raw_procs: Vec<(u32, u32, String, String, SysProcessStatus, u64, u64, f32, f32, u64)> = self.sys.processes()
@@ -283,18 +294,42 @@ impl Collector {
                     0.0
                 };
 
-                let cmd = proc_info.cmd();
-                let command = if cmd.is_empty() {
-                    proc_info.name().to_string_lossy().to_string()
+                let pid_u32 = pid.as_u32();
+
+                // When update_process_names is OFF, use cached name/command if available
+                let (name, command) = if !update_names {
+                    if let Some((cached_name, cached_cmd)) = self.process_name_cache.get(&pid_u32) {
+                        (cached_name.clone(), cached_cmd.clone())
+                    } else {
+                        let cmd = proc_info.cmd();
+                        let command = if cmd.is_empty() {
+                            proc_info.name().to_string_lossy().to_string()
+                        } else {
+                            cmd.iter()
+                                .map(|s| s.to_string_lossy().to_string())
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        };
+                        let name = proc_info.name().to_string_lossy().to_string();
+                        self.process_name_cache.insert(pid_u32, (name.clone(), command.clone()));
+                        (name, command)
+                    }
                 } else {
-                    cmd.iter()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .collect::<Vec<_>>()
-                        .join(" ")
+                    let cmd = proc_info.cmd();
+                    let command = if cmd.is_empty() {
+                        proc_info.name().to_string_lossy().to_string()
+                    } else {
+                        cmd.iter()
+                            .map(|s| s.to_string_lossy().to_string())
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    };
+                    let name = proc_info.name().to_string_lossy().to_string();
+                    self.process_name_cache.insert(pid_u32, (name.clone(), command.clone()));
+                    (name, command)
                 };
 
                 let ppid = proc_info.parent().map(|p| p.as_u32()).unwrap_or(0);
-                let name = proc_info.name().to_string_lossy().to_string();
 
                 // Sanitize cpu_usage: sysinfo can return NaN for inaccessible processes
                 let cpu = proc_info.cpu_usage();
@@ -408,8 +443,9 @@ impl Collector {
             })
             .collect();
 
-        // Clean up dead PIDs from prev_io_counters to prevent memory leak
+        // Clean up dead PIDs from prev_io_counters and process_name_cache to prevent memory leak
         self.prev_io_counters.retain(|pid, _| current_pids.contains(pid));
+        self.process_name_cache.retain(|pid, _| current_pids.contains(pid));
 
         // If show_threads is enabled, enumerate individual threads and add as sub-entries
         if app.show_threads {

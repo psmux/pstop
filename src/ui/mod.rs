@@ -65,20 +65,43 @@ pub fn header_height(app: &App, term_height: u16, term_width: u16) -> u16 {
     if cores == 0 {
         return 5; // fallback: just info rows
     }
+
+    // Count non-CPU info meters per panel
+    let is_cpu = |m: &String| m == "AllCPUs" || m.starts_with("CPUs");
+    let left_has_cpus = app.left_meters.iter().any(|m| is_cpu(m));
+    let right_has_cpus = app.right_meters.iter().any(|m| is_cpu(m));
+    let left_info_count = app.left_meters.iter().filter(|m| !is_cpu(m)).count();
+    let right_info_count = app.right_meters.iter().filter(|m| !is_cpu(m)).count();
+
     let cpu_cols = cpu_column_count(cores, term_height, term_width);
     let sub_cols_per_panel = (cpu_cols / 2).max(1);
-    let half = (cores + 1) / 2;
-    let right_count = cores - half;
-    let left_cpu_rows = (half + sub_cols_per_panel - 1) / sub_cols_per_panel;
-    let right_cpu_rows = if right_count > 0 {
-        (right_count + sub_cols_per_panel - 1) / sub_cols_per_panel
+
+    let (left_cores, right_cores) = if left_has_cpus && right_has_cpus {
+        let half = (cores + 1) / 2;
+        (half, cores - half)
+    } else if left_has_cpus {
+        (cores, 0)
+    } else if right_has_cpus {
+        (0, cores)
+    } else {
+        (0, 0)
+    };
+
+    let left_cpu_rows = if left_cores > 0 {
+        (left_cores + sub_cols_per_panel - 1) / sub_cols_per_panel
     } else {
         0
     };
-    let left_total = left_cpu_rows + 3; // Mem + Swap/GPU + Net/VMem
-    let right_total = right_cpu_rows + 3; // Tasks + Load + Uptime
-    let pad: usize = if app.header_margin { 2 } else { 0 }; // htop: pad=2 when margin on
-    (left_total.max(right_total) + pad) as u16
+    let right_cpu_rows = if right_cores > 0 {
+        (right_cores + sub_cols_per_panel - 1) / sub_cols_per_panel
+    } else {
+        0
+    };
+
+    let left_total = left_cpu_rows + left_info_count;
+    let right_total = right_cpu_rows + right_info_count;
+    let pad: usize = if app.header_margin { 2 } else { 0 };
+    (left_total.max(right_total).max(1) + pad) as u16
 }
 
 /// Render the complete UI

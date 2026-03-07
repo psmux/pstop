@@ -17,6 +17,7 @@ use std::os::windows::process::CommandExt;
 #[derive(Debug, Clone, Default)]
 pub struct GpuProcessInfo {
     pub pid: u32,
+    pub name: String,             // Process name (looked up from sysinfo)
     pub gpu_usage: f64,           // Max engine utilization % across all engines
     pub dedicated_mem: u64,       // Dedicated GPU memory bytes
     pub shared_mem: u64,          // Shared GPU memory bytes

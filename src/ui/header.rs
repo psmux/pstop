@@ -39,7 +39,6 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     }
 
     // header_margin: add horizontal AND vertical padding when enabled
-    // htop uses pad=2 → 1 row top + 1 row bottom, 1 col left + 1 col right
     let content_area = if app.header_margin {
         Rect {
             x: area.x + 1,
@@ -51,9 +50,24 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
         area
     };
 
+    // Determine which panels have CPU bars based on configured meters
+    let left_has_cpus = app.left_meters.iter().any(|m| is_cpu_meter(m));
+    let right_has_cpus = app.right_meters.iter().any(|m| is_cpu_meter(m));
+
+    // Collect non-CPU info meters for each panel
+    let left_info: Vec<&str> = app.left_meters.iter()
+        .filter(|m| !is_cpu_meter(m))
+        .map(|s| s.as_str())
+        .collect();
+    let right_info: Vec<&str> = app.right_meters.iter()
+        .filter(|m| !is_cpu_meter(m))
+        .map(|s| s.as_str())
+        .collect();
+
     // Calculate optimal CPU column count (2, 4, 8, 16) — htop-style auto-alignment
+    let info_max = left_info.len().max(right_info.len()).max(3);
     let cpu_cols = {
-        let max_cpu_rows = (area.height as usize).saturating_sub(3);
+        let max_cpu_rows = (area.height as usize).saturating_sub(info_max);
         if max_cpu_rows == 0 {
             2usize
         } else {
@@ -72,26 +86,36 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
         }
     };
 
-    let cs = &app.color_scheme;
-
-    // CPU distribution: first half goes to left panel, rest to right panel
+    // CPU distribution based on meter config
     let sub_cols_per_panel = (cpu_cols / 2).max(1);
-    let half = (core_count + 1) / 2;
-    let cores_per_sub_left = (half + sub_cols_per_panel - 1) / sub_cols_per_panel;
-    let right_core_count = core_count - half;
-    let cores_per_sub_right = if right_core_count > 0 {
-        (right_core_count + sub_cols_per_panel - 1) / sub_cols_per_panel
+
+    let (left_cores_start, left_cores_count, right_cores_start, right_cores_count) =
+        if left_has_cpus && right_has_cpus {
+            let half = (core_count + 1) / 2;
+            (0, half, half, core_count - half)
+        } else if left_has_cpus {
+            (0, core_count, 0, 0)
+        } else if right_has_cpus {
+            (0, 0, 0, core_count)
+        } else {
+            (0, 0, 0, 0)
+        };
+
+    let left_cpu_rows = if left_cores_count > 0 {
+        let cores_per_sub = (left_cores_count + sub_cols_per_panel - 1) / sub_cols_per_panel;
+        cores_per_sub
+    } else {
+        0
+    };
+    let right_cpu_rows = if right_cores_count > 0 {
+        let cores_per_sub = (right_cores_count + sub_cols_per_panel - 1) / sub_cols_per_panel;
+        cores_per_sub
     } else {
         0
     };
 
-    // htop-style: each column flows independently
-    let left_cpu_rows = cores_per_sub_left;
-    let right_cpu_rows = cores_per_sub_right;
-    let left_info_count = 3; // Mem + Swap/GPU + Net/VMem
-    let right_info_count = 3; // Tasks + Load + Uptime
-    let left_total = left_cpu_rows + left_info_count;
-    let right_total = right_cpu_rows + right_info_count;
+    let left_total = left_cpu_rows + left_info.len();
+    let right_total = right_cpu_rows + right_info.len();
 
     // Split into left and right panels with 1-char separator (htop style)
     let half_w = content_area.width / 2;
@@ -109,7 +133,7 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     };
 
     // --- LEFT PANEL ---
-    {
+    if left_total > 0 {
         let panel = left_panel;
         let row_constraints: Vec<Constraint> = (0..left_total)
             .map(|_| Constraint::Length(1))
@@ -120,58 +144,19 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
             .split(panel);
 
         // CPU bars
-        if sub_cols_per_panel == 1 {
-            for i in 0..half.min(left_cpu_rows) {
-                if i < cores.len() && i < rows.len() {
-                    draw_cpu_bar(f, &cores[i], rows[i], cs, app.cpu_count_from_zero,
-                        app.cpu_user_frac, app.cpu_kernel_frac, app.detailed_cpu_time);
-                }
-            }
-        } else {
-            for row_i in 0..left_cpu_rows {
-                if row_i >= rows.len() { break; }
-                let sub_constraints: Vec<Constraint> = (0..sub_cols_per_panel)
-                    .map(|_| Constraint::Ratio(1, sub_cols_per_panel as u32))
-                    .collect();
-                let sub_cells = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints(sub_constraints)
-                    .split(rows[row_i]);
+        render_cpu_bars(f, app, left_cores_start, left_cores_count, sub_cols_per_panel, &rows, left_cpu_rows);
 
-                for sub_i in 0..sub_cols_per_panel {
-                    let core_idx = sub_i * cores_per_sub_left + row_i;
-                    if core_idx < half && core_idx < cores.len() && sub_i < sub_cells.len() {
-                        draw_cpu_bar(f, &cores[core_idx], sub_cells[sub_i], cs,
-                            app.cpu_count_from_zero, app.cpu_user_frac, app.cpu_kernel_frac,
-                            app.detailed_cpu_time);
-                    }
-                }
-            }
-        }
-
-        // Info rows immediately after last CPU row (htop-style: no gap)
-        let info_start = left_cpu_rows;
-        if info_start < rows.len() {
-            draw_memory_bar(f, app, rows[info_start]);
-        }
-        if info_start + 1 < rows.len() {
-            if app.active_tab == ProcessTab::Gpu {
-                draw_gpu_bar(f, app, rows[info_start + 1]);
-            } else {
-                draw_swap_bar(f, app, rows[info_start + 1]);
-            }
-        }
-        if info_start + 2 < rows.len() {
-            if app.active_tab == ProcessTab::Gpu {
-                draw_vram_bar(f, app, rows[info_start + 2]);
-            } else {
-                draw_network_bar(f, app, rows[info_start + 2]);
+        // Info meters
+        for (i, meter_name) in left_info.iter().enumerate() {
+            let row_idx = left_cpu_rows + i;
+            if row_idx < rows.len() {
+                draw_meter(f, app, meter_name, rows[row_idx]);
             }
         }
     }
 
     // --- RIGHT PANEL ---
-    {
+    if right_total > 0 {
         let panel = right_panel;
         let row_constraints: Vec<Constraint> = (0..right_total)
             .map(|_| Constraint::Length(1))
@@ -182,47 +167,99 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
             .split(panel);
 
         // CPU bars
-        if sub_cols_per_panel == 1 {
-            for i in 0..right_core_count.min(right_cpu_rows) {
-                let core_idx = half + i;
-                if core_idx < cores.len() && i < rows.len() {
-                    draw_cpu_bar(f, &cores[core_idx], rows[i], cs, app.cpu_count_from_zero,
-                        app.cpu_user_frac, app.cpu_kernel_frac, app.detailed_cpu_time);
-                }
-            }
-        } else {
-            for row_i in 0..right_cpu_rows {
-                if row_i >= rows.len() { break; }
-                let sub_constraints: Vec<Constraint> = (0..sub_cols_per_panel)
-                    .map(|_| Constraint::Ratio(1, sub_cols_per_panel as u32))
-                    .collect();
-                let sub_cells = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints(sub_constraints)
-                    .split(rows[row_i]);
+        render_cpu_bars(f, app, right_cores_start, right_cores_count, sub_cols_per_panel, &rows, right_cpu_rows);
 
-                for sub_i in 0..sub_cols_per_panel {
-                    let core_idx = half + sub_i * cores_per_sub_right + row_i;
-                    if core_idx < cores.len() && sub_i < sub_cells.len() {
-                        draw_cpu_bar(f, &cores[core_idx], sub_cells[sub_i], cs,
-                            app.cpu_count_from_zero, app.cpu_user_frac, app.cpu_kernel_frac,
-                            app.detailed_cpu_time);
-                    }
-                }
+        // Info meters
+        for (i, meter_name) in right_info.iter().enumerate() {
+            let row_idx = right_cpu_rows + i;
+            if row_idx < rows.len() {
+                draw_meter(f, app, meter_name, rows[row_idx]);
             }
         }
+    }
+}
 
-        // Info rows immediately after last CPU row (htop-style: no gap)
-        let info_start = right_cpu_rows;
-        if info_start < rows.len() {
-            draw_tasks_line(f, app, rows[info_start]);
+/// Check if a meter name represents CPU bars
+fn is_cpu_meter(name: &str) -> bool {
+    name == "AllCPUs" || name.starts_with("CPUs")
+}
+
+/// Render CPU bars for a range of cores into the given rows
+fn render_cpu_bars(
+    f: &mut Frame,
+    app: &App,
+    cores_start: usize,
+    cores_count: usize,
+    sub_cols_per_panel: usize,
+    rows: &[Rect],
+    max_rows: usize,
+) {
+    if cores_count == 0 || max_rows == 0 {
+        return;
+    }
+    let cores = &app.cpu_info.cores;
+    let cs = &app.color_scheme;
+    let cores_per_sub = (cores_count + sub_cols_per_panel - 1) / sub_cols_per_panel;
+
+    if sub_cols_per_panel == 1 {
+        for i in 0..cores_count.min(max_rows) {
+            let core_idx = cores_start + i;
+            if core_idx < cores.len() && i < rows.len() {
+                draw_cpu_bar(f, &cores[core_idx], rows[i], cs, app.cpu_count_from_zero,
+                    app.cpu_user_frac, app.cpu_kernel_frac, app.detailed_cpu_time);
+            }
         }
-        if info_start + 1 < rows.len() {
-            draw_load_line(f, app, rows[info_start + 1]);
+    } else {
+        for row_i in 0..max_rows {
+            if row_i >= rows.len() { break; }
+            let sub_constraints: Vec<Constraint> = (0..sub_cols_per_panel)
+                .map(|_| Constraint::Ratio(1, sub_cols_per_panel as u32))
+                .collect();
+            let sub_cells = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(sub_constraints)
+                .split(rows[row_i]);
+
+            for sub_i in 0..sub_cols_per_panel {
+                let core_idx = cores_start + sub_i * cores_per_sub + row_i;
+                if core_idx < cores_start + cores_count && core_idx < cores.len() && sub_i < sub_cells.len() {
+                    draw_cpu_bar(f, &cores[core_idx], sub_cells[sub_i], cs,
+                        app.cpu_count_from_zero, app.cpu_user_frac, app.cpu_kernel_frac,
+                        app.detailed_cpu_time);
+                }
+            }
         }
-        if info_start + 2 < rows.len() {
-            draw_uptime_line(f, app, rows[info_start + 2]);
+    }
+}
+
+/// Dispatch a single meter by name to its rendering function
+fn draw_meter(f: &mut Frame, app: &App, name: &str, area: Rect) {
+    match name {
+        "Memory" => draw_memory_bar(f, app, area),
+        "Swap" => {
+            if app.active_tab == ProcessTab::Gpu {
+                draw_gpu_bar(f, app, area);
+            } else {
+                draw_swap_bar(f, app, area);
+            }
         }
+        "Network" => {
+            if app.active_tab == ProcessTab::Gpu {
+                draw_vram_bar(f, app, area);
+            } else {
+                draw_network_bar(f, app, area);
+            }
+        }
+        "GPU" => draw_gpu_bar(f, app, area),
+        "VMem" => draw_vram_bar(f, app, area),
+        "Tasks" => draw_tasks_line(f, app, area),
+        "Load average" => draw_load_line(f, app, area),
+        "Uptime" => draw_uptime_line(f, app, area),
+        "CPU average" => draw_cpu_average_bar(f, app, area),
+        "Clock" => draw_clock_line(f, app, area),
+        "Hostname" => draw_hostname_line(f, app, area),
+        "Blank" => {} // empty row
+        _ => {} // unknown meter, skip
     }
 }
 
@@ -596,4 +633,61 @@ fn draw_vram_bar(f: &mut Frame, app: &App, area: Rect) {
         cs.cpu_bar_bg,
         area,
     );
+}
+
+/// Draw a single aggregate CPU average bar
+fn draw_cpu_average_bar(f: &mut Frame, app: &App, area: Rect) {
+    let cores = &app.cpu_info.cores;
+    let avg_usage: f64 = if cores.is_empty() {
+        0.0
+    } else {
+        cores.iter().map(|c| c.usage_percent as f64).sum::<f64>() / cores.len() as f64
+    };
+    let cs = &app.color_scheme;
+    let usage_frac = avg_usage / 100.0;
+    let text = format!("{:.1}%", avg_usage);
+    let (user_frac_bar, kernel_frac_bar) = if app.detailed_cpu_time {
+        let total = app.cpu_user_frac + app.cpu_kernel_frac;
+        if total > 0.0 {
+            (app.cpu_user_frac / total * usage_frac, app.cpu_kernel_frac / total * usage_frac)
+        } else {
+            (usage_frac, 0.0)
+        }
+    } else {
+        (usage_frac * 0.7, usage_frac * 0.3)
+    };
+    draw_htop_bar(
+        f,
+        "CPU",
+        &[(user_frac_bar, cs.cpu_bar_normal), (kernel_frac_bar, cs.cpu_bar_system)],
+        &text,
+        cs.cpu_label,
+        cs.cpu_bar_bg,
+        area,
+    );
+}
+
+/// Draw clock: "Clock: HH:MM:SS"
+fn draw_clock_line(f: &mut Frame, app: &App, area: Rect) {
+    let cs = &app.color_scheme;
+    let now = chrono::Local::now();
+    let time_str = now.format("%H:%M:%S").to_string();
+    let line = Line::from(vec![
+        Span::styled("Clock: ", Style::default().fg(cs.info_label).add_modifier(Modifier::BOLD)),
+        Span::styled(time_str, Style::default().fg(cs.info_value).add_modifier(Modifier::BOLD)),
+    ]);
+    f.render_widget(Paragraph::new(line), area);
+}
+
+/// Draw hostname: "Hostname: COMPUTERNAME"
+fn draw_hostname_line(f: &mut Frame, app: &App, area: Rect) {
+    let cs = &app.color_scheme;
+    let hostname = std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "unknown".to_string());
+    let line = Line::from(vec![
+        Span::styled("Hostname: ", Style::default().fg(cs.info_label).add_modifier(Modifier::BOLD)),
+        Span::styled(hostname, Style::default().fg(cs.info_value).add_modifier(Modifier::BOLD)),
+    ]);
+    f.render_widget(Paragraph::new(line), area);
 }

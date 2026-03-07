@@ -142,7 +142,9 @@ pub struct App {
     pub setup_menu_index: usize,
     pub setup_category: usize,      // 0=Meters, 1=Display, 2=Colors, 3=Columns
     pub setup_panel: usize,         // 0=categories, 1=options/columns
-    pub setup_meter_col: usize,     // 0=left, 1=right (Meters category)
+    pub setup_meter_col: usize,     // 0=left, 1=right, 2=available (Meters category)
+    pub setup_available_index: usize, // Selected index in available meters list
+    pub setup_meter_target: usize,  // 0=left, 1=right — target column for adding from available
     pub left_meters: Vec<String>,   // Configurable left header meters
     pub right_meters: Vec<String>,  // Configurable right header meters
 
@@ -277,14 +279,16 @@ impl App {
             setup_category: 0,
             setup_panel: 0,
             setup_meter_col: 0,
+            setup_available_index: 0,
+            setup_meter_target: 0,
             left_meters: vec![
-                "CPUs (1/1)".to_string(),
+                "AllCPUs".to_string(),
                 "Memory".to_string(),
                 "Swap".to_string(),
                 "Network".to_string(),
             ],
             right_meters: vec![
-                "CPUs (2/2)".to_string(),
+                "AllCPUs".to_string(),
                 "Tasks".to_string(),
                 "Load average".to_string(),
                 "Uptime".to_string(),
@@ -749,8 +753,7 @@ impl App {
             let ord = match field {
                 ProcessSortField::Pid => a.pid.cmp(&b.pid),
                 ProcessSortField::Command => {
-                    // Need process names — use pid comparison as fallback
-                    a.pid.cmp(&b.pid)
+                    a.name.to_lowercase().cmp(&b.name.to_lowercase())
                 }
                 ProcessSortField::Cpu => a.gpu_usage.partial_cmp(&b.gpu_usage).unwrap_or(std::cmp::Ordering::Equal),
                 ProcessSortField::Status => a.engine_type.cmp(&b.engine_type),

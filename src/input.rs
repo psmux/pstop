@@ -527,14 +527,20 @@ fn handle_handles_mode(app: &mut App, key: KeyEvent) {
 
 fn handle_setup_mode(app: &mut App, key: KeyEvent) {
     use crate::color_scheme::{ColorScheme, ColorSchemeId};
+    use crate::ui::setup_menu::AVAILABLE_METERS;
     let all_fields = ProcessSortField::all();
     let num_categories = 4usize; // Meters, Display options, Colors, Columns
     // Max index in content panel per category
     let max_content_idx = match app.setup_category {
         0 => {
-            // Meters: depends on which column is selected
-            let meter_list = if app.setup_meter_col == 0 { &app.left_meters } else { &app.right_meters };
-            meter_list.len().saturating_sub(1)
+            if app.setup_meter_col == 2 {
+                // Available meters panel
+                AVAILABLE_METERS.len().saturating_sub(1)
+            } else {
+                // Left or right meter column
+                let meter_list = if app.setup_meter_col == 0 { &app.left_meters } else { &app.right_meters };
+                meter_list.len().saturating_sub(1)
+            }
         }
         1 => 14, // 14 display options + interval row
         2 => ColorSchemeId::all().len().saturating_sub(1),
@@ -551,11 +557,17 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
         // ── Panel switching ──
         KeyCode::Left => {
             if app.setup_panel == 1 && app.setup_category == 0 {
-                // Meters: switch between left/right columns
-                if app.setup_meter_col > 0 {
-                    app.setup_meter_col -= 1;
+                // Meters: switch between left/right/available columns
+                if app.setup_meter_col == 2 {
+                    // Available → Right column
+                    app.setup_meter_col = 1;
+                    app.setup_menu_index = 0;
+                } else if app.setup_meter_col == 1 {
+                    // Right → Left column
+                    app.setup_meter_col = 0;
                     app.setup_menu_index = 0;
                 } else {
+                    // Left column → categories panel
                     app.setup_panel = 0;
                     app.setup_menu_index = 0;
                 }
@@ -566,10 +578,18 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Right => {
             if app.setup_panel == 1 && app.setup_category == 0 {
-                // Meters: switch between left/right columns
-                if app.setup_meter_col < 1 {
-                    app.setup_meter_col += 1;
+                // Meters: switch between left/right/available columns
+                if app.setup_meter_col == 0 {
+                    // Left → Right column
+                    app.setup_meter_col = 1;
                     app.setup_menu_index = 0;
+                } else if app.setup_meter_col == 1 {
+                    // Right → Available meters
+                    app.setup_meter_target = 1; // remember last column for adding
+                    app.setup_meter_col = 2;
+                    app.setup_menu_index = app.setup_available_index;
+                } else {
+                    // Already in available, stay
                 }
             } else if app.setup_panel < 1 {
                 app.setup_panel += 1;
@@ -583,6 +603,12 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
                     app.setup_category -= 1;
                     app.setup_menu_index = 0;
                 }
+            } else if app.setup_category == 0 && app.setup_meter_col == 2 {
+                // Available meters navigation
+                if app.setup_available_index > 0 {
+                    app.setup_available_index -= 1;
+                    app.setup_menu_index = app.setup_available_index;
+                }
             } else if app.setup_menu_index > 0 {
                 app.setup_menu_index -= 1;
             }
@@ -592,6 +618,12 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
                 if app.setup_category + 1 < num_categories {
                     app.setup_category += 1;
                     app.setup_menu_index = 0;
+                }
+            } else if app.setup_category == 0 && app.setup_meter_col == 2 {
+                // Available meters navigation
+                if app.setup_available_index < AVAILABLE_METERS.len().saturating_sub(1) {
+                    app.setup_available_index += 1;
+                    app.setup_menu_index = app.setup_available_index;
                 }
             } else if app.setup_menu_index < max_content_idx {
                 app.setup_menu_index += 1;
@@ -604,6 +636,25 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
                 app.setup_menu_index = 0;
             } else {
                 match app.setup_category {
+                    0 => {
+                        // Meters: add from available meters
+                        if app.setup_meter_col == 2 {
+                            // In available meters panel — add selected meter to target column
+                            if let Some(&meter_name) = AVAILABLE_METERS.get(app.setup_available_index) {
+                                let target = if app.setup_meter_target == 0 {
+                                    &mut app.left_meters
+                                } else {
+                                    &mut app.right_meters
+                                };
+                                target.push(meter_name.to_string());
+                            }
+                        } else {
+                            // In left/right column — move to available meters to add
+                            app.setup_meter_target = app.setup_meter_col;
+                            app.setup_meter_col = 2;
+                            app.setup_menu_index = app.setup_available_index;
+                        }
+                    }
                     1 => {
                         // Display options toggles (14 options + interval)
                         match app.setup_menu_index {
@@ -643,10 +694,7 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
                             }
                         }
                     }
-                    _ => {
-                        // Meters: add from available list (future: show available meters picker)
-                        // For now, no action on Enter in meter columns
-                    }
+                    _ => {}
                 }
             }
         }
@@ -676,7 +724,7 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Delete | KeyCode::Backspace => {
             // Remove selected meter from current column (Meters category only)
-            if app.setup_category == 0 && app.setup_panel == 1 {
+            if app.setup_category == 0 && app.setup_panel == 1 && app.setup_meter_col <= 1 {
                 let meters = if app.setup_meter_col == 0 { &mut app.left_meters } else { &mut app.right_meters };
                 if !meters.is_empty() && app.setup_menu_index < meters.len() {
                     meters.remove(app.setup_menu_index);
@@ -688,7 +736,7 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
         }
         KeyCode::F(7) => {
             // Move meter up in current column (Meters category)
-            if app.setup_category == 0 && app.setup_panel == 1 {
+            if app.setup_category == 0 && app.setup_panel == 1 && app.setup_meter_col <= 1 {
                 let meters = if app.setup_meter_col == 0 { &mut app.left_meters } else { &mut app.right_meters };
                 if app.setup_menu_index > 0 && app.setup_menu_index < meters.len() {
                     meters.swap(app.setup_menu_index, app.setup_menu_index - 1);
@@ -698,7 +746,7 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
         }
         KeyCode::F(8) => {
             // Move meter down in current column (Meters category)
-            if app.setup_category == 0 && app.setup_panel == 1 {
+            if app.setup_category == 0 && app.setup_panel == 1 && app.setup_meter_col <= 1 {
                 let meters = if app.setup_meter_col == 0 { &mut app.left_meters } else { &mut app.right_meters };
                 if app.setup_menu_index + 1 < meters.len() {
                     meters.swap(app.setup_menu_index, app.setup_menu_index + 1);

@@ -45,6 +45,10 @@ pub struct PstopConfig {
 
     // Visible columns
     pub visible_columns: Vec<ProcessSortField>,
+
+    // Meters
+    pub left_meters: Vec<String>,
+    pub right_meters: Vec<String>,
 }
 
 impl Default for PstopConfig {
@@ -70,6 +74,18 @@ impl Default for PstopConfig {
             sort_field: ProcessSortField::Cpu,
             sort_ascending: false,
             visible_columns: ProcessSortField::all().to_vec(),
+            left_meters: vec![
+                "AllCPUs".to_string(),
+                "Memory".to_string(),
+                "Swap".to_string(),
+                "Network".to_string(),
+            ],
+            right_meters: vec![
+                "AllCPUs".to_string(),
+                "Tasks".to_string(),
+                "Load average".to_string(),
+                "Uptime".to_string(),
+            ],
         }
     }
 }
@@ -144,6 +160,24 @@ impl PstopConfig {
                                 .collect();
                         }
                     }
+                    "left_meters" => {
+                        let meters: Vec<String> = value.split(';')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                        if !meters.is_empty() {
+                            cfg.left_meters = meters;
+                        }
+                    }
+                    "right_meters" => {
+                        let meters: Vec<String> = value.split(';')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                        if !meters.is_empty() {
+                            cfg.right_meters = meters;
+                        }
+                    }
                     _ => {} // Ignore unknown keys
                 }
             }
@@ -202,6 +236,10 @@ impl PstopConfig {
             .collect();
         lines.push(format!("visible_columns={}", col_indices.join(",")));
 
+        // Meters
+        lines.push(format!("left_meters={}", self.left_meters.join(";")));
+        lines.push(format!("right_meters={}", self.right_meters.join(";")));
+
         let content = lines.join("\n") + "\n";
         let mut file = fs::File::create(&path)
             .map_err(|e| format!("Failed to create config file: {}", e))?;
@@ -234,6 +272,8 @@ impl PstopConfig {
             sort_field: app.sort_field,
             sort_ascending: app.sort_ascending,
             visible_columns: app.visible_columns.iter().cloned().collect(),
+            left_meters: app.left_meters.clone(),
+            right_meters: app.right_meters.clone(),
         }
     }
 
@@ -241,6 +281,10 @@ impl PstopConfig {
     pub fn apply_to(&self, app: &mut crate::app::App) {
         app.tree_view = self.tree_view;
         app.show_tree_by_default = self.show_tree_by_default;
+        // If "Tree view by default" is enabled, always start with tree view on
+        if self.show_tree_by_default {
+            app.tree_view = true;
+        }
         app.hide_kernel_threads = self.hide_kernel_threads;
         app.shadow_other_users = self.shadow_other_users;
         app.highlight_base_name = self.highlight_base_name;
@@ -260,5 +304,7 @@ impl PstopConfig {
         app.sort_field = self.sort_field;
         app.sort_ascending = self.sort_ascending;
         app.visible_columns = self.visible_columns.iter().cloned().collect();
+        app.left_meters = self.left_meters.clone();
+        app.right_meters = self.right_meters.clone();
     }
 }

@@ -118,6 +118,24 @@ fn draw_categories_panel(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Paragraph::new(lines), area);
 }
 
+// ── Available meters (what can be added to header columns) ──────────────────
+
+pub const AVAILABLE_METERS: &[&str] = &[
+    "AllCPUs",
+    "CPU average",
+    "Memory",
+    "Swap",
+    "Network",
+    "GPU",
+    "VMem",
+    "Tasks",
+    "Load average",
+    "Uptime",
+    "Clock",
+    "Hostname",
+    "Blank",
+];
+
 // ── Meters panel (category 0) ───────────────────────────────────────────────
 
 fn draw_meters_panel(f: &mut Frame, app: &App, area: Rect) {
@@ -127,23 +145,35 @@ fn draw_meters_panel(f: &mut Frame, app: &App, area: Rect) {
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(30),
-            Constraint::Percentage(30),
-            Constraint::Percentage(40),
+            Constraint::Percentage(28),
+            Constraint::Percentage(28),
+            Constraint::Percentage(44),
         ])
         .split(area);
 
+    // Active panel indicator
+    let left_active = app.setup_panel == 1 && app.setup_meter_col == 0;
+    let right_active = app.setup_panel == 1 && app.setup_meter_col == 1;
+    let avail_active = app.setup_panel == 1 && app.setup_meter_col == 2;
+
     // Left column meters (from app state)
+    let left_title_fg = if left_active { cs.popup_selected_fg } else { cs.popup_title };
     let mut left_lines = vec![
         Line::from(Span::styled(
             " Left Column",
-            Style::default().fg(cs.popup_title).add_modifier(Modifier::BOLD),
+            Style::default().fg(left_title_fg).add_modifier(Modifier::BOLD),
         )),
     ];
+    if app.left_meters.is_empty() {
+        left_lines.push(Line::from(Span::styled(
+            "  (empty)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
     for (i, m) in app.left_meters.iter().enumerate() {
-        let is_sel = app.setup_panel == 1 && app.setup_meter_col == 0 && i == app.setup_menu_index;
-        let bg = if is_sel { Color::Indexed(236) } else { Color::Reset };
-        let fg = if is_sel { Color::Yellow } else { cs.popup_text };
+        let is_sel = left_active && i == app.setup_menu_index;
+        let bg = if is_sel { cs.popup_selected_bg } else { Color::Reset };
+        let fg = if is_sel { cs.popup_selected_fg } else { cs.popup_text };
         left_lines.push(Line::from(Span::styled(
             format!("  {}", m),
             Style::default().fg(fg).bg(bg),
@@ -152,16 +182,23 @@ fn draw_meters_panel(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Paragraph::new(left_lines), cols[0]);
 
     // Right column meters (from app state)
+    let right_title_fg = if right_active { cs.popup_selected_fg } else { cs.popup_title };
     let mut right_lines = vec![
         Line::from(Span::styled(
             " Right Column",
-            Style::default().fg(cs.popup_title).add_modifier(Modifier::BOLD),
+            Style::default().fg(right_title_fg).add_modifier(Modifier::BOLD),
         )),
     ];
+    if app.right_meters.is_empty() {
+        right_lines.push(Line::from(Span::styled(
+            "  (empty)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
     for (i, m) in app.right_meters.iter().enumerate() {
-        let is_sel = app.setup_panel == 1 && app.setup_meter_col == 1 && i == app.setup_menu_index;
-        let bg = if is_sel { Color::Indexed(236) } else { Color::Reset };
-        let fg = if is_sel { Color::Yellow } else { cs.popup_text };
+        let is_sel = right_active && i == app.setup_menu_index;
+        let bg = if is_sel { cs.popup_selected_bg } else { Color::Reset };
+        let fg = if is_sel { cs.popup_selected_fg } else { cs.popup_text };
         right_lines.push(Line::from(Span::styled(
             format!("  {}", m),
             Style::default().fg(fg).bg(bg),
@@ -169,39 +206,38 @@ fn draw_meters_panel(f: &mut Frame, app: &App, area: Rect) {
     }
     f.render_widget(Paragraph::new(right_lines), cols[1]);
 
-    // Available meters
-    let available = vec![
-        "CPU average", "CPU (1/1) [Bar]", "CPU (1/1) [Text]",
-        "CPU (1/1) [Graph]", "CPU (1/1) [LED]",
-        "Memory [Bar]", "Memory [Text]",
-        "Swap [Bar]", "Swap [Text]",
-        "Network [Bar]", "Clock", "Hostname",
-        "Uptime", "Battery", "Tasks", "Load average",
-        "Blank",
-    ];
+    // Available meters (interactive)
+    let avail_title_fg = if avail_active { cs.popup_selected_fg } else { cs.popup_title };
     let mut avail_lines = vec![
         Line::from(Span::styled(
             " Available Meters",
-            Style::default().fg(cs.popup_title).add_modifier(Modifier::BOLD),
+            Style::default().fg(avail_title_fg).add_modifier(Modifier::BOLD),
         )),
     ];
-    for meter in &available {
+    for (i, meter) in AVAILABLE_METERS.iter().enumerate() {
+        let is_sel = avail_active && i == app.setup_available_index;
+        let bg = if is_sel { cs.popup_selected_bg } else { Color::Reset };
+        let fg = if is_sel { cs.popup_selected_fg } else { cs.popup_text };
         avail_lines.push(Line::from(Span::styled(
             format!("  {}", meter),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(fg).bg(bg),
         )));
     }
     avail_lines.push(Line::from(""));
     avail_lines.push(Line::from(Span::styled(
-        "  ←→ Column  ↑↓ Navigate",
+        "  ←→ Switch panel",
         Style::default().fg(Color::DarkGray),
     )));
     avail_lines.push(Line::from(Span::styled(
-        "  Enter Add  Del Remove",
+        "  ↑↓ Navigate",
         Style::default().fg(Color::DarkGray),
     )));
     avail_lines.push(Line::from(Span::styled(
-        "  F7 Move up  F8 Move down",
+        "  Enter=Add  Del=Remove",
+        Style::default().fg(Color::DarkGray),
+    )));
+    avail_lines.push(Line::from(Span::styled(
+        "  F7=Move up  F8=Move down",
         Style::default().fg(Color::DarkGray),
     )));
     f.render_widget(Paragraph::new(avail_lines), cols[2]);
