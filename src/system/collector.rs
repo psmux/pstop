@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use sysinfo::{System, ProcessStatus as SysProcessStatus, ProcessesToUpdate, Networks};
+use sysinfo::{System, ProcessStatus as SysProcessStatus, ProcessesToUpdate, ProcessRefreshKind, UpdateKind, Networks};
 
 use crate::app::App;
 use crate::system::cpu::{CpuCore, CpuInfo};
@@ -11,10 +11,13 @@ use crate::system::process::{ProcessInfo, ProcessStatus};
 use crate::system::winapi;
 use crate::system::netstat;
 
-/// System data collector using the `sysinfo` crate, with Windows user resolution
+/// System data collector using the `sysinfo` crate for process data,
+/// with native Win32 APIs for CPU monitoring and per-process enrichment.
 pub struct Collector {
-    sys: System,
-    networks: Networks,
+    pub(crate) sys: System,
+    networks: Option<Networks>,
+    /// Native per-core CPU monitor (replaces sysinfo PDH, saves ~155ms init)
+    cpu_monitor: winapi::NativeCpuMonitor,
     /// Cache: PID -> resolved user name (via Win32 token lookup)
     user_name_cache: HashMap<u32, String>,
     /// Cache: Win32 process data (priority, threads) - updated every 3 ticks
@@ -24,6 +27,8 @@ pub struct Collector {
     process_times_cache: HashMap<u32, u64>,
     /// Previous I/O counters for rate calculation: PID -> (read_bytes, write_bytes, timestamp)
     prev_io_counters: HashMap<u32, (u64, u64, std::time::Instant)>,
+    /// Pre-fetched I/O counters from parallel thread (consumed by collect_processes)
+    prefetched_io: HashMap<u32, (u64, u64)>,
     /// Cache: PID -> (name, command) — used when update_process_names is OFF
     process_name_cache: HashMap<u32, (String, String)>,
     /// Previous network totals for rate calculation
@@ -38,6 +43,8 @@ pub struct Collector {
     /// Accounts for Fast Startup, which causes GetTickCount64() to report
     /// inflated uptime because the kernel hibernates instead of rebooting.
     boot_time_unix: Option<i64>,
+    /// Pending boot time query (runs on background thread)
+    boot_time_pending: Option<std::thread::JoinHandle<Option<i64>>>,
     /// CPU user/kernel time split tracker (via GetSystemTimes)
     cpu_time_split: winapi::CpuTimeSplit,
     /// Last sampled CPU user/kernel fractions
@@ -49,28 +56,30 @@ pub struct Collector {
 
 impl Collector {
     pub fn new() -> Self {
-        let mut sys = System::new();
-        // Only refresh what we need initially
-        sys.refresh_cpu_all();
-        sys.refresh_memory();
-        
-        // Need an initial CPU measurement for deltas
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        sys.refresh_cpu_all();
+        // Spawn boot time query on background thread (it shells out to wevtutil ~200ms)
+        // Don't block — we'll check for completion on first refresh
+        let boot_time_handle = std::thread::spawn(|| winapi::get_real_boot_time());
 
-        let networks = Networks::new_with_refreshed_list();
+        // Use native NtQuerySystemInformation for CPU monitoring (<1ms)
+        // instead of sysinfo's PDH-based approach (~155ms initialization).
+        let cpu_monitor = winapi::NativeCpuMonitor::new();
 
-        // Query real boot time from Event Log (handles Fast Startup correctly)
-        let boot_time_unix = winapi::get_real_boot_time();
+        let sys = System::new();
+        // No refresh_cpu_all needed! CPU monitoring is handled by NativeCpuMonitor.
+        // sysinfo is only used for process enumeration + memory.
+
+        // Networks lazy-initialized on first use (saves ~12ms)
 
         Self {
             sys,
-            networks,
+            networks: None,
+            cpu_monitor,
             user_name_cache: HashMap::new(),
             win_data_cache: HashMap::new(),
             win_data_cache_ticks: 0,
             process_times_cache: HashMap::new(),
             prev_io_counters: HashMap::new(),
+            prefetched_io: HashMap::new(),
             process_name_cache: HashMap::new(),
             prev_net_rx: 0,
             prev_net_tx: 0,
@@ -78,12 +87,26 @@ impl Collector {
             load_samples_1: 0.0,
             load_samples_5: 0.0,
             load_samples_15: 0.0,
-            boot_time_unix,
+            boot_time_unix: None,
+            boot_time_pending: Some(boot_time_handle),
             cpu_time_split: winapi::CpuTimeSplit::new(),
             cpu_user_frac: 0.7,
             cpu_kernel_frac: 0.3,
             gpu_collector: GpuCollector::new(),
         }
+    }
+
+    /// Fast partial refresh: only CPU + memory for header bars.
+    /// Used for the second frame so CPU/memory bars appear ~120ms before process data.
+    pub fn refresh_header_only(&mut self, app: &mut App) {
+        self.sys.refresh_memory();
+        self.collect_cpu(app);
+        self.collect_memory(app);
+        let (user_frac, kernel_frac) = self.cpu_time_split.sample();
+        self.cpu_user_frac = user_frac;
+        self.cpu_kernel_frac = kernel_frac;
+        app.cpu_user_frac = self.cpu_user_frac;
+        app.cpu_kernel_frac = self.cpu_kernel_frac;
     }
 
     /// Refresh all system data and populate the App
@@ -92,13 +115,70 @@ impl Collector {
             return; // Z key: freeze display
         }
 
-        // Refresh only what we need - much faster than refresh_all()
-        self.sys.refresh_cpu_all();
+        // Check if async boot time query has completed
+        if self.boot_time_unix.is_none() {
+            if let Some(handle) = self.boot_time_pending.take() {
+                if handle.is_finished() {
+                    self.boot_time_unix = handle.join().ok().flatten();
+                } else {
+                    self.boot_time_pending = Some(handle);
+                }
+            }
+        }
+
+        // ── Prefetch Win32 data in parallel with sysinfo refresh ──
+        // EnumProcesses gives PID list in <1ms, then we launch Win32 batch threads
+        // that run concurrently with sysinfo's slower refresh_processes (~100ms).
+        let refresh_win_data = self.win_data_cache_ticks == 0 || self.win_data_cache_ticks % 3 == 0;
+        let refresh_times = self.win_data_cache_ticks % 3 == 0;
+
+        // Pre-enumerate PIDs via EnumProcesses (<1ms) for parallel Win32 batch calls.
+        // I/O counters are fetched every tick; data/users/times only every 3 ticks.
+        let pids = winapi::quick_enumerate_pids();
+
+        // Always launch I/O counters in parallel with sysinfo refresh
+        let pids_for_io = pids.clone();
+        let io_handle = std::thread::spawn(move || winapi::batch_io_counters(&pids_for_io));
+
+        let prefetch_handles = if refresh_win_data {
+            let pids_for_data = pids.clone();
+            let pids_for_users = pids.clone();
+            let data_handle = std::thread::spawn(move || winapi::collect_process_data(&pids_for_data));
+            let users_handle = std::thread::spawn(move || winapi::batch_process_users(&pids_for_users));
+            let times_handle = if refresh_times {
+                let pids_for_times = pids;
+                Some(std::thread::spawn(move || winapi::batch_process_times(&pids_for_times)))
+            } else {
+                None
+            };
+            Some((data_handle, users_handle, times_handle))
+        } else {
+            None
+        };
+
+        // Refresh sysinfo data (runs concurrently with Win32 prefetch threads above)
+        // CPU monitoring is handled natively by NativeCpuMonitor, not sysinfo.
         self.sys.refresh_memory();
-        // In sysinfo v0.38, 2nd param = remove dead processes (always true).
-        // Use refresh_processes for full process data every tick to ensure
-        // cpu_usage deltas are calculated correctly.
-        self.sys.refresh_processes(ProcessesToUpdate::All, true);
+        self.sys.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing()
+                .with_cpu()
+                .with_memory()
+                .with_cmd(UpdateKind::OnlyIfNotSet),
+        );
+
+        // Collect I/O prefetch results
+        self.prefetched_io = io_handle.join().unwrap_or_default();
+
+        // Collect optional prefetch results (threads likely finished by now)
+        if let Some((data_handle, users_handle, times_handle)) = prefetch_handles {
+            self.win_data_cache = data_handle.join().unwrap_or_default();
+            self.user_name_cache = users_handle.join().unwrap_or_default();
+            if let Some(handle) = times_handle {
+                self.process_times_cache = handle.join().unwrap_or_default();
+            }
+        }
 
         // Sample real CPU user/kernel split via GetSystemTimes
         let (user_frac, kernel_frac) = self.cpu_time_split.sample();
@@ -184,16 +264,17 @@ impl Collector {
         app.tick += 1;
     }
 
-    fn collect_cpu(&self, app: &mut App) {
-        let cpus = self.sys.cpus();
+    fn collect_cpu(&mut self, app: &mut App) {
+        let usage = self.cpu_monitor.sample();
+        let freq = self.cpu_monitor.frequency;
 
-        let cores: Vec<CpuCore> = cpus
+        let cores: Vec<CpuCore> = usage
             .iter()
             .enumerate()
-            .map(|(i, cpu)| CpuCore {
+            .map(|(i, &pct)| CpuCore {
                 id: i,
-                usage_percent: cpu.cpu_usage(),
-                frequency_mhz: cpu.frequency(),
+                usage_percent: pct,
+                frequency_mhz: freq,
             })
             .collect();
 
@@ -203,13 +284,11 @@ impl Collector {
             cores.iter().map(|c| c.usage_percent).sum::<f32>() / cores.len() as f32
         };
 
-        let brand = cpus.first().map(|c| c.brand().to_string()).unwrap_or_default();
-
         app.cpu_info = CpuInfo {
             physical_cores: sysinfo::System::physical_core_count().unwrap_or(cores.len()),
             logical_cores: cores.len(),
             total_usage,
-            brand,
+            brand: self.cpu_monitor.brand.clone(),
             cores,
         };
     }
@@ -237,14 +316,16 @@ impl Collector {
 
     fn collect_network(&mut self, app: &mut App) {
         // Refresh network data (true = reset delta counters)
-        self.networks.refresh(true);
+        // Lazy-init networks on first use
+        let networks = self.networks.get_or_insert_with(Networks::new_with_refreshed_list);
+        networks.refresh(true);
 
         let now = std::time::Instant::now();
 
         // Sum across all interfaces
         let mut total_rx: u64 = 0;
         let mut total_tx: u64 = 0;
-        for (_name, data) in self.networks.iter() {
+        for (_name, data) in networks.iter() {
             total_rx += data.total_received();
             total_tx += data.total_transmitted();
         }
@@ -339,25 +420,11 @@ impl Collector {
             })
             .collect();
 
-        // Batch-collect Windows-specific data (priority, thread counts)
-        // Only refresh every 3 ticks to reduce expensive Win32 API overhead
+        // Win32 data (priority, users, times, I/O) is pre-fetched in refresh() via parallel threads.
         let all_pids: Vec<u32> = raw_procs.iter().map(|(pid, ..)| *pid).collect();
-        if self.win_data_cache_ticks == 0 || self.win_data_cache_ticks % 3 == 0 {
-            self.win_data_cache = winapi::collect_process_data(&all_pids);
-            // Also refresh user names (same cadence — users don't change often)
-            self.user_name_cache = winapi::batch_process_users(&all_pids);
-        }
+        let io_counters = std::mem::take(&mut self.prefetched_io);
+
         self.win_data_cache_ticks += 1;
-
-        // I/O counters MUST be fetched every tick for accurate rate calculation
-        let io_counters = winapi::batch_io_counters(&all_pids);
-
-        // Batch-collect per-process CPU times for TIME+ sub-second precision
-        // Only every 3 ticks (aligned with win_data refresh) to save overhead
-        // IMPORTANT: cache the result so cpu_time_100ns doesn't drop to 0 between refreshes
-        if self.win_data_cache_ticks % 3 == 1 {
-            self.process_times_cache = winapi::batch_process_times(&all_pids);
-        }
 
         // Build a set of current PIDs for dead PID cleanup
         let current_pids: std::collections::HashSet<u32> = all_pids.iter().copied().collect();

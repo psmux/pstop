@@ -117,7 +117,9 @@ pub struct GpuCollector {
 
 impl GpuCollector {
     pub fn new() -> Self {
-        let mut collector = GpuCollector {
+        // Lazy initialization: don't set up PDH queries until GPU tab is first accessed.
+        // This eliminates ~10-50ms of PDH setup from the startup critical path.
+        GpuCollector {
             query: 0,
             engine_counter: 0,
             dedicated_counter: 0,
@@ -125,9 +127,7 @@ impl GpuCollector {
             initialized: false,
             has_sampled_once: false,
             adapter_info: GpuAdapterInfo::default(),
-        };
-        collector.init();
-        collector
+        }
     }
 
     fn init(&mut self) {
@@ -168,6 +168,10 @@ impl GpuCollector {
     /// Collect GPU data. Returns per-process GPU info.
     /// Must be called periodically (e.g., every 1-2 seconds).
     pub fn collect(&mut self) -> Vec<GpuProcessInfo> {
+        // Lazy init: set up PDH on first collect() call
+        if !self.initialized && self.query == 0 {
+            self.init();
+        }
         if !self.initialized || self.query == 0 {
             return Vec::new();
         }

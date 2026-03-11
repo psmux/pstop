@@ -20,7 +20,7 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
 };
 use windows::Win32::System::ProcessStatus::{
     EnumProcessModulesEx, GetModuleFileNameExW, LIST_MODULES_ALL,
-    GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+    GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, EnumProcesses,
 };
 use windows::Win32::System::Threading::{
     GetPriorityClass, OpenProcess, SetPriorityClass, GetProcessIoCounters,
@@ -169,66 +169,91 @@ pub fn collect_process_data(pids: &[u32]) -> HashMap<u32, WinProcessData> {
 
     for &pid in pids {
         let tc = thread_counts.get(&pid).copied().unwrap_or(1);
-        let (pri, ni) = get_priority(pid);
-        let private_ws = get_private_working_set(pid);
-        result.insert(pid, WinProcessData {
-            priority: pri,
-            nice: ni,
-            thread_count: tc,
-            private_working_set: private_ws,
-        });
+
+        if pid == 0 || pid == 4 {
+            result.insert(pid, WinProcessData {
+                priority: 0,
+                nice: 0,
+                thread_count: tc,
+                private_working_set: 0,
+            });
+            continue;
+        }
+
+        // Single handle open per PID: query both priority and memory info
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_INFORMATION, false, pid);
+            let handle = match handle {
+                Ok(h) => h,
+                Err(_) => {
+                    // Fallback: try limited access for memory only
+                    let limited = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+                    let private_ws = if let Ok(h) = limited {
+                        let ws = query_private_working_set(h);
+                        let _ = CloseHandle(h);
+                        ws
+                    } else {
+                        0
+                    };
+                    result.insert(pid, WinProcessData {
+                        priority: 8,
+                        nice: 0,
+                        thread_count: tc,
+                        private_working_set: private_ws,
+                    });
+                    continue;
+                }
+            };
+
+            let pclass = GetPriorityClass(handle);
+            let (pri, ni) = map_priority_class(pclass);
+            let private_ws = query_private_working_set(handle);
+
+            let _ = CloseHandle(handle);
+
+            result.insert(pid, WinProcessData {
+                priority: pri,
+                nice: ni,
+                thread_count: tc,
+                private_working_set: private_ws,
+            });
+        }
     }
 
     result
 }
 
-/// Get private working set of a process using GetProcessMemoryInfo.
-/// Returns private bytes (PrivateUsage from PROCESS_MEMORY_COUNTERS_EX-compatible struct).
-/// shared_mem can then be computed as: resident_mem - private_working_set
-fn get_private_working_set(pid: u32) -> u64 {
-    if pid == 0 || pid == 4 {
-        return 0;
+/// Query private working set from an already-open process handle.
+/// Avoids redundant OpenProcess calls when used with collect_process_data.
+unsafe fn query_private_working_set(handle: HANDLE) -> u64 {
+    #[repr(C)]
+    struct ProcessMemoryCountersEx {
+        cb: u32,
+        page_fault_count: u32,
+        peak_working_set_size: usize,
+        working_set_size: usize,
+        quota_peak_paged_pool_usage: usize,
+        quota_paged_pool_usage: usize,
+        quota_peak_non_paged_pool_usage: usize,
+        quota_non_paged_pool_usage: usize,
+        pagefile_usage: usize,
+        peak_pagefile_usage: usize,
+        private_usage: usize,
     }
-    unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-        let handle = match handle {
-            Ok(h) => h,
-            Err(_) => return 0,
-        };
 
-        // Use PROCESS_MEMORY_COUNTERS but request extended size to get PrivateUsage
-        // The extended struct (PROCESS_MEMORY_COUNTERS_EX) has PrivateUsage at the end
-        #[repr(C)]
-        struct ProcessMemoryCountersEx {
-            cb: u32,
-            page_fault_count: u32,
-            peak_working_set_size: usize,
-            working_set_size: usize,
-            quota_peak_paged_pool_usage: usize,
-            quota_paged_pool_usage: usize,
-            quota_peak_non_paged_pool_usage: usize,
-            quota_non_paged_pool_usage: usize,
-            pagefile_usage: usize,
-            peak_pagefile_usage: usize,
-            private_usage: usize,
-        }
+    let mut counters: ProcessMemoryCountersEx = mem::zeroed();
+    counters.cb = mem::size_of::<ProcessMemoryCountersEx>() as u32;
 
-        let mut counters: ProcessMemoryCountersEx = mem::zeroed();
-        counters.cb = mem::size_of::<ProcessMemoryCountersEx>() as u32;
+    let result = GetProcessMemoryInfo(
+        handle,
+        &mut counters as *mut ProcessMemoryCountersEx as *mut PROCESS_MEMORY_COUNTERS,
+        counters.cb,
+    );
 
-        let result = GetProcessMemoryInfo(
-            handle,
-            &mut counters as *mut ProcessMemoryCountersEx as *mut PROCESS_MEMORY_COUNTERS,
-            counters.cb,
-        );
-
-        let _ = CloseHandle(handle);
-
-        if result.is_ok() {
-            counters.private_usage as u64
-        } else {
-            0
-        }
+    if result.is_ok() {
+        counters.private_usage as u64
+    } else {
+        0
     }
 }
 
@@ -846,4 +871,203 @@ pub fn batch_process_times(pids: &[u32]) -> HashMap<u32, u64> {
         }
     }
     result
+}
+
+/// Fast PID enumeration via Win32 EnumProcesses (< 1ms).
+/// Used to pre-fetch the PID list before sysinfo's slower refresh_processes.
+pub fn quick_enumerate_pids() -> Vec<u32> {
+    unsafe {
+        let mut pids = vec![0u32; 4096];
+        let mut bytes_returned: u32 = 0;
+        let buf_size = (pids.len() * std::mem::size_of::<u32>()) as u32;
+        if EnumProcesses(pids.as_mut_ptr(), buf_size, &mut bytes_returned).is_ok() {
+            let count = bytes_returned as usize / std::mem::size_of::<u32>();
+            pids.truncate(count);
+            pids
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+// ─── Per-core CPU monitor via NtQuerySystemInformation ─────────────────────
+// Replaces sysinfo's PDH-based CPU monitoring which requires ~155ms initialization.
+// Uses SystemProcessorPerformanceInformation which returns per-core idle/kernel/user
+// times in a single <1ms syscall.
+
+/// Per-core performance counter snapshot.
+#[repr(C)]
+struct ProcessorPerformanceInfo {
+    idle_time: i64,
+    kernel_time: i64,  // includes idle
+    user_time: i64,
+    _reserved: [i64; 2],
+    _interrupt_count: u32,
+}
+
+/// Per-core CPU usage tracker using NtQuerySystemInformation.
+/// Takes one snapshot on creation, then computes deltas on each `sample()` call.
+pub struct NativeCpuMonitor {
+    prev: Vec<(u64, u64, u64)>,  // (idle, kernel, user) per core
+    /// Cached CPU brand string
+    pub brand: String,
+    /// Cached CPU frequency (MHz)
+    pub frequency: u64,
+}
+
+impl NativeCpuMonitor {
+    pub fn new() -> Self {
+        let snapshot = Self::query_processor_times();
+        let prev: Vec<(u64, u64, u64)> = snapshot
+            .iter()
+            .map(|s| (s.0, s.1, s.2))
+            .collect();
+
+        // Get CPU brand + frequency once via CPUID/registry
+        let (brand, frequency) = Self::get_cpu_info();
+
+        Self { prev, brand, frequency }
+    }
+
+    /// Number of logical cores
+    pub fn core_count(&self) -> usize {
+        self.prev.len()
+    }
+
+    /// Sample and return per-core CPU usage percentages.
+    pub fn sample(&mut self) -> Vec<f32> {
+        let current = Self::query_processor_times();
+        let mut usage = Vec::with_capacity(current.len());
+
+        for (i, &(idle, kernel, user)) in current.iter().enumerate() {
+            if i < self.prev.len() {
+                let (prev_idle, prev_kernel, prev_user) = self.prev[i];
+                let d_idle = idle.wrapping_sub(prev_idle);
+                let d_kernel = kernel.wrapping_sub(prev_kernel);
+                let d_user = user.wrapping_sub(prev_user);
+                // kernel includes idle, so active_kernel = kernel - idle
+                let active = d_user + d_kernel.saturating_sub(d_idle);
+                let total = d_user + d_kernel; // kernel already includes idle
+                let pct = if total > 0 {
+                    (active as f64 / total as f64 * 100.0) as f32
+                } else {
+                    0.0
+                };
+                usage.push(pct.clamp(0.0, 100.0));
+            } else {
+                usage.push(0.0);
+            }
+        }
+
+        self.prev = current.iter().map(|s| (s.0, s.1, s.2)).collect();
+        usage
+    }
+
+    // Query per-processor times via NtQuerySystemInformation(SystemProcessorPerformanceInformation)
+    fn query_processor_times() -> Vec<(u64, u64, u64)> {
+        use ntapi::ntexapi::NtQuerySystemInformation;
+        const SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION: u32 = 8;
+
+        unsafe {
+            // Allocate for up to 256 logical processors
+            let max_cpus = 256;
+            let entry_size = std::mem::size_of::<ProcessorPerformanceInfo>();
+            let buf_size = max_cpus * entry_size;
+            let mut buffer = vec![0u8; buf_size];
+            let mut return_length: u32 = 0;
+
+            let status = NtQuerySystemInformation(
+                SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION,
+                buffer.as_mut_ptr() as *mut _,
+                buf_size as u32,
+                &mut return_length,
+            );
+
+            if status < 0 {
+                return Vec::new();
+            }
+
+            let count = return_length as usize / entry_size;
+            let entries = std::slice::from_raw_parts(
+                buffer.as_ptr() as *const ProcessorPerformanceInfo,
+                count,
+            );
+
+            entries
+                .iter()
+                .map(|e| (e.idle_time as u64, e.kernel_time as u64, e.user_time as u64))
+                .collect()
+        }
+    }
+
+    fn get_cpu_info() -> (String, u64) {
+        // Get CPU brand from registry (fastest method on Windows)
+        let brand = Self::read_cpu_brand().unwrap_or_else(|| "Unknown CPU".to_string());
+        let freq = Self::read_cpu_frequency().unwrap_or(0);
+        (brand, freq)
+    }
+
+    fn read_cpu_brand() -> Option<String> {
+        use windows::Win32::System::Registry::*;
+        unsafe {
+            let mut hkey = HKEY::default();
+            let subkey: Vec<u16> = "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0\0"
+                .encode_utf16()
+                .collect();
+            if RegOpenKeyExW(HKEY_LOCAL_MACHINE, windows::core::PCWSTR(subkey.as_ptr()), Some(0), KEY_READ, &mut hkey) != windows::Win32::Foundation::WIN32_ERROR(0) {
+                return None;
+            }
+            let value_name: Vec<u16> = "ProcessorNameString\0".encode_utf16().collect();
+            let mut buf = vec![0u8; 256];
+            let mut buf_len = buf.len() as u32;
+            let mut kind = REG_VALUE_TYPE(0);
+            let result = RegQueryValueExW(
+                hkey,
+                windows::core::PCWSTR(value_name.as_ptr()),
+                None,
+                Some(&mut kind),
+                Some(buf.as_mut_ptr()),
+                Some(&mut buf_len),
+            );
+            let _ = RegCloseKey(hkey);
+            if result != windows::Win32::Foundation::WIN32_ERROR(0) {
+                return None;
+            }
+            let wide: &[u16] = std::slice::from_raw_parts(
+                buf.as_ptr() as *const u16,
+                (buf_len as usize / 2).saturating_sub(1),
+            );
+            Some(String::from_utf16_lossy(wide).trim().to_string())
+        }
+    }
+
+    fn read_cpu_frequency() -> Option<u64> {
+        use windows::Win32::System::Registry::*;
+        unsafe {
+            let mut hkey = HKEY::default();
+            let subkey: Vec<u16> = "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0\0"
+                .encode_utf16()
+                .collect();
+            if RegOpenKeyExW(HKEY_LOCAL_MACHINE, windows::core::PCWSTR(subkey.as_ptr()), Some(0), KEY_READ, &mut hkey) != windows::Win32::Foundation::WIN32_ERROR(0) {
+                return None;
+            }
+            let value_name: Vec<u16> = "~MHz\0".encode_utf16().collect();
+            let mut data: u32 = 0;
+            let mut data_len = std::mem::size_of::<u32>() as u32;
+            let mut kind = REG_VALUE_TYPE(0);
+            let result = RegQueryValueExW(
+                hkey,
+                windows::core::PCWSTR(value_name.as_ptr()),
+                None,
+                Some(&mut kind),
+                Some(&mut data as *mut u32 as *mut u8),
+                Some(&mut data_len),
+            );
+            let _ = RegCloseKey(hkey);
+            if result != windows::Win32::Foundation::WIN32_ERROR(0) {
+                return None;
+            }
+            Some(data as u64)
+        }
+    }
 }

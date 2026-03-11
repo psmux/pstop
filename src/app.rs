@@ -172,6 +172,10 @@ pub struct App {
 
     // Compact mode: minimal header for small screens/mobile
     pub compact_mode: bool,
+
+    // Startup timing (ms) for performance monitoring
+    pub startup_first_frame_ms: u64,
+    pub startup_fully_loaded_ms: u64,
 }
 
 /// Windows "signals" for kill menu (mapped to taskkill behavior)
@@ -313,6 +317,9 @@ impl App {
             tick: 0,
 
             compact_mode: false,
+
+            startup_first_frame_ms: 0,
+            startup_fully_loaded_ms: 0,
         }
     }
 
