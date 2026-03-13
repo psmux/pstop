@@ -10,12 +10,13 @@ use crate::system::process::ProcessSortField;
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
-/// Setup categories (htop: Meters | Display options | Colors | Columns)
+/// Setup categories (htop: Meters | Display options | Colors | Columns | Reset)
 const CATEGORIES: &[&str] = &[
     "Meters",
     "Display options",
     "Colors",
     "Columns",
+    "Reset to defaults",
 ];
 
 /// All display option toggle labels (htop parity)
@@ -65,6 +66,7 @@ pub fn draw_setup_menu(f: &mut Frame, app: &App) {
         1 => draw_display_options(f, app, panels[1]),
         2 => draw_colors_panel(f, app, panels[1]),
         3 => draw_columns_panel(f, app, panels[1]),
+        4 => draw_reset_panel(f, app, panels[1]),
         _ => {}
     }
 }
@@ -122,6 +124,9 @@ fn draw_categories_panel(f: &mut Frame, app: &App, area: Rect) {
 
 pub const AVAILABLE_METERS: &[&str] = &[
     "AllCPUs",
+    "AllCPUs2",
+    "AllCPUs4",
+    "AllCPUs8",
     "CPU average",
     "Memory",
     "Swap",
@@ -398,14 +403,16 @@ fn draw_colors_panel(f: &mut Frame, app: &App, area: Rect) {
         Line::from(""),
     ];
 
-    // CPU bar preview
+    // CPU bar preview (htop-style: nice/low, user, kernel, irq, softirq)
     prev_lines.push(Line::from(vec![
         Span::styled(" 0", Style::default().fg(preview.cpu_label)),
         Span::styled("[", Style::default().fg(preview.cpu_label)),
         Span::styled("||||", Style::default().fg(preview.cpu_bar_low)),
         Span::styled("||||||", Style::default().fg(preview.cpu_bar_normal)),
         Span::styled("|||", Style::default().fg(preview.cpu_bar_system)),
-        Span::styled("       ", Style::default().fg(preview.cpu_bar_bg)),
+        Span::styled("|", Style::default().fg(preview.cpu_bar_irq)),
+        Span::styled("|", Style::default().fg(preview.cpu_bar_softirq)),
+        Span::styled("      ", Style::default().fg(preview.cpu_bar_bg)),
         Span::styled(" 42.1%]", Style::default().fg(preview.cpu_label)),
     ]));
 
@@ -554,6 +561,73 @@ fn draw_columns_panel(f: &mut Frame, app: &App, area: Rect) {
     }
 
     f.render_widget(Paragraph::new(desc_lines), cols[1]);
+}
+
+// ── Reset to defaults panel (category 4) ────────────────────────────────────
+
+fn draw_reset_panel(f: &mut Frame, app: &App, area: Rect) {
+    let cs = &app.color_scheme;
+
+    let confirm_selected = app.setup_panel == 1 && app.setup_menu_index == 0;
+    let cancel_selected = app.setup_panel == 1 && app.setup_menu_index == 1;
+
+    let mut lines = vec![
+        Line::from(Span::styled(
+            " Reset to defaults",
+            Style::default().fg(cs.popup_title).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  This will reset ALL settings to their default values:",
+            Style::default().fg(cs.popup_text),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "    - Color scheme → Default",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(Span::styled(
+            "    - Display options → defaults",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(Span::styled(
+            "    - Meters layout → defaults",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(Span::styled(
+            "    - Visible columns → all",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(Span::styled(
+            "    - Sort order → CPU% descending",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(""),
+    ];
+
+    // Confirm button
+    let confirm_bg = if confirm_selected { cs.popup_selected_bg } else { Color::Reset };
+    let confirm_fg = if confirm_selected { cs.popup_selected_fg } else { Color::Red };
+    lines.push(Line::from(Span::styled(
+        "  [ Reset All Settings ]",
+        Style::default().fg(confirm_fg).bg(confirm_bg).add_modifier(Modifier::BOLD),
+    )));
+
+    // Cancel button
+    let cancel_bg = if cancel_selected { cs.popup_selected_bg } else { Color::Reset };
+    let cancel_fg = if cancel_selected { cs.popup_selected_fg } else { cs.popup_text };
+    lines.push(Line::from(Span::styled(
+        "  [ Cancel ]",
+        Style::default().fg(cancel_fg).bg(cancel_bg),
+    )));
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "  Enter=select  ↑↓=navigate",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    f.render_widget(Paragraph::new(lines), area);
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

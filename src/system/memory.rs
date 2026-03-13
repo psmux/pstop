@@ -35,22 +35,34 @@ impl MemoryInfo {
     }
 }
 
-/// Format bytes to human-readable string (KiB, MiB, GiB)
+/// Format bytes to human-readable string matching htop's Meter_humanUnit exactly.
+/// Adaptive precision: 2 decimals for <10, 1 decimal for <100, 0 for ≥100.
 pub fn format_bytes(bytes: u64) -> String {
-    const KIB: u64 = 1024;
-    const MIB: u64 = 1024 * KIB;
-    const GIB: u64 = 1024 * MIB;
-    const TIB: u64 = 1024 * GIB;
+    const ONE_K: f64 = 1024.0;
+    let prefixes = ['K', 'M', 'G', 'T', 'P'];
 
-    if bytes >= TIB {
-        format!("{:.1}T", bytes as f64 / TIB as f64)
-    } else if bytes >= GIB {
-        format!("{:.1}G", bytes as f64 / GIB as f64)
-    } else if bytes >= MIB {
-        format!("{:.0}M", bytes as f64 / MIB as f64)
-    } else if bytes >= KIB {
-        format!("{:.0}K", bytes as f64 / KIB as f64)
-    } else {
-        format!("{}B", bytes)
+    let mut value = bytes as f64 / ONE_K; // convert to KiB first (htop base unit)
+    let mut i: usize = 0;
+
+    if bytes < 1024 {
+        return format!("{}B", bytes);
     }
+
+    while value >= ONE_K && i < prefixes.len() - 1 {
+        value /= ONE_K;
+        i += 1;
+    }
+
+    // htop's adaptive precision: ≤9.99 → 2 dec, ≤99.9 → 1 dec, else 0 dec
+    let precision = if i == 0 {
+        0 // KiB: no decimals (htop: raw KiB count)
+    } else if value <= 9.99 {
+        2
+    } else if value <= 99.9 {
+        1
+    } else {
+        0
+    };
+
+    format!("{:.*}{}", precision, value, prefixes[i])
 }

@@ -130,6 +130,8 @@ pub struct App {
     // CPU user/kernel time split (from GetSystemTimes)
     pub cpu_user_frac: f64,    // fraction of CPU time in user mode (0.0 - 1.0)
     pub cpu_kernel_frac: f64,  // fraction of CPU time in kernel mode (0.0 - 1.0)
+    pub cpu_dpc_frac: f64,     // fraction in DPC (≈ Linux softirq)
+    pub cpu_interrupt_frac: f64, // fraction in interrupt (≈ Linux irq)
 
     // Kill mode signal selection
     pub kill_signal_index: usize,
@@ -259,6 +261,8 @@ impl App {
 
             cpu_user_frac: 0.7,
             cpu_kernel_frac: 0.3,
+            cpu_dpc_frac: 0.0,
+            cpu_interrupt_frac: 0.0,
 
             kill_signal_index: 1, // Default to SIGKILL (force) on Windows
 

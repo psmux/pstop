@@ -529,7 +529,7 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
     use crate::color_scheme::{ColorScheme, ColorSchemeId};
     use crate::ui::setup_menu::AVAILABLE_METERS;
     let all_fields = ProcessSortField::all();
-    let num_categories = 4usize; // Meters, Display options, Colors, Columns
+    let num_categories = 5usize; // Meters, Display options, Colors, Columns, Reset
     // Max index in content panel per category
     let max_content_idx = match app.setup_category {
         0 => {
@@ -545,6 +545,7 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
         1 => 14, // 14 display options + interval row
         2 => ColorSchemeId::all().len().saturating_sub(1),
         3 => all_fields.len().saturating_sub(1), // All fields, not just visible ones
+        4 => 1, // Reset: 0=confirm, 1=cancel
         _ => 0,
     };
 
@@ -692,6 +693,20 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
                                     app.visible_columns.insert(field);
                                 }
                             }
+                        }
+                    }
+                    4 => {
+                        // Reset to defaults
+                        if app.setup_menu_index == 0 {
+                            // Confirm: apply defaults and save
+                            let defaults = crate::config::PstopConfig::default();
+                            defaults.apply_to(app);
+                            let _ = defaults.save();
+                            app.mode = AppMode::Normal;
+                        } else {
+                            // Cancel: go back to categories
+                            app.setup_panel = 0;
+                            app.setup_menu_index = 0;
                         }
                     }
                     _ => {}

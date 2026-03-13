@@ -196,6 +196,14 @@ impl Collector {
         app.cpu_user_frac = self.cpu_user_frac;
         app.cpu_kernel_frac = self.cpu_kernel_frac;
 
+        // Compute system-wide DPC/interrupt fracs from per-core data
+        let cores = &app.cpu_info.cores;
+        if !cores.is_empty() {
+            let n = cores.len() as f64;
+            app.cpu_dpc_frac = cores.iter().map(|c| c.dpc_frac as f64).sum::<f64>() / n;
+            app.cpu_interrupt_frac = cores.iter().map(|c| c.interrupt_frac as f64).sum::<f64>() / n;
+        }
+
         app.collect_users();
         app.apply_filter();
         app.sort_processes();
@@ -265,16 +273,20 @@ impl Collector {
     }
 
     fn collect_cpu(&mut self, app: &mut App) {
-        let usage = self.cpu_monitor.sample();
+        let samples = self.cpu_monitor.sample();
         let freq = self.cpu_monitor.frequency;
 
-        let cores: Vec<CpuCore> = usage
+        let cores: Vec<CpuCore> = samples
             .iter()
             .enumerate()
-            .map(|(i, &pct)| CpuCore {
+            .map(|(i, s)| CpuCore {
                 id: i,
-                usage_percent: pct,
+                usage_percent: s.usage_percent,
                 frequency_mhz: freq,
+                user_frac: s.user_frac,
+                kernel_frac: s.kernel_frac,
+                dpc_frac: s.dpc_frac,
+                interrupt_frac: s.interrupt_frac,
             })
             .collect();
 

@@ -25,7 +25,7 @@ use crate::system::memory::format_bytes;
 ///   Mem[||||used|||cache|    5.2G/16.0G]
 ///   GPU[||||||||       45.2%]
 ///   VMem[||||      2.1G used]
-pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
+pub fn draw_header(f: &mut Frame, app: &App, area: Rect, term_height: u16, term_width: u16) {
     // Compact mode: single aggregate CPU bar + memory bar
     if app.compact_mode {
         draw_compact_header(f, app, area);
@@ -64,30 +64,22 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
         .map(|s| s.as_str())
         .collect();
 
-    // Calculate optimal CPU column count (2, 4, 8, 16) — htop-style auto-alignment
-    let info_max = left_info.len().max(right_info.len()).max(3);
-    let cpu_cols = {
-        let max_cpu_rows = (area.height as usize).saturating_sub(info_max);
-        if max_cpu_rows == 0 {
-            2usize
-        } else {
-            let max_by_width = (content_area.width / super::MIN_CPU_COL_WIDTH).max(2) as usize;
-            let mut result = 2usize;
-            for &cols in &[2, 4, 8, 16] {
-                if cols > max_by_width { break; }
-                let rows_needed = (core_count + cols - 1) / cols;
-                if rows_needed <= max_cpu_rows {
-                    result = cols;
-                    break;
-                }
-                result = cols;
-            }
-            result
-        }
-    };
+    // Use the actual terminal dimensions (same as header_height) to ensure
+    // cpu_column_count returns the same value, avoiding height mismatches.
+    let auto_cpu_cols = super::cpu_column_count(core_count, term_height, term_width);
+    let auto_sub_cols = (auto_cpu_cols / 2).max(1);
 
-    // CPU distribution based on meter config
-    let sub_cols_per_panel = (cpu_cols / 2).max(1);
+    // Check if either panel uses an explicit CPU meter variant (AllCPUs2/4/8)
+    let left_cpu_meter = app.left_meters.iter().find(|m| is_cpu_meter(m));
+    let right_cpu_meter = app.right_meters.iter().find(|m| is_cpu_meter(m));
+
+    // Per-panel sub-column counts: use explicit variant if set, otherwise auto
+    let left_sub_cols = left_cpu_meter
+        .and_then(|m| cpu_meter_subcols(m))
+        .unwrap_or(auto_sub_cols);
+    let right_sub_cols = right_cpu_meter
+        .and_then(|m| cpu_meter_subcols(m))
+        .unwrap_or(auto_sub_cols);
 
     let (left_cores_start, left_cores_count, right_cores_start, right_cores_count) =
         if left_has_cpus && right_has_cpus {
@@ -102,14 +94,12 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
         };
 
     let left_cpu_rows = if left_cores_count > 0 {
-        let cores_per_sub = (left_cores_count + sub_cols_per_panel - 1) / sub_cols_per_panel;
-        cores_per_sub
+        (left_cores_count + left_sub_cols - 1) / left_sub_cols
     } else {
         0
     };
     let right_cpu_rows = if right_cores_count > 0 {
-        let cores_per_sub = (right_cores_count + sub_cols_per_panel - 1) / sub_cols_per_panel;
-        cores_per_sub
+        (right_cores_count + right_sub_cols - 1) / right_sub_cols
     } else {
         0
     };
@@ -118,17 +108,21 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     let right_total = right_cpu_rows + right_info.len();
 
     // Split into left and right panels with 1-char separator (htop style)
-    let half_w = content_area.width / 2;
+    // htop Header_draw: width = COLS - 2*pad - (numCols-1), each col = width * pct / 100
+    // For 2-col 50/50: left = (w-1)/2, right = (w-1) - left (right gets the extra pixel)
+    let usable = content_area.width.saturating_sub(1); // exclude 1-char separator
+    let left_w = usable / 2;
+    let right_w = usable - left_w;
     let left_panel = Rect {
         x: content_area.x,
         y: content_area.y,
-        width: half_w,
+        width: left_w,
         height: content_area.height,
     };
     let right_panel = Rect {
-        x: content_area.x + half_w + 1,
+        x: content_area.x + left_w + 1,
         y: content_area.y,
-        width: content_area.width.saturating_sub(half_w + 1),
+        width: right_w,
         height: content_area.height,
     };
 
@@ -144,7 +138,7 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
             .split(panel);
 
         // CPU bars
-        render_cpu_bars(f, app, left_cores_start, left_cores_count, sub_cols_per_panel, &rows, left_cpu_rows);
+        render_cpu_bars(f, app, left_cores_start, left_cores_count, left_sub_cols, &rows, left_cpu_rows);
 
         // Info meters
         for (i, meter_name) in left_info.iter().enumerate() {
@@ -167,7 +161,7 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
             .split(panel);
 
         // CPU bars
-        render_cpu_bars(f, app, right_cores_start, right_cores_count, sub_cols_per_panel, &rows, right_cpu_rows);
+        render_cpu_bars(f, app, right_cores_start, right_cores_count, right_sub_cols, &rows, right_cpu_rows);
 
         // Info meters
         for (i, meter_name) in right_info.iter().enumerate() {
@@ -181,7 +175,18 @@ pub fn draw_header(f: &mut Frame, app: &App, area: Rect) {
 
 /// Check if a meter name represents CPU bars
 fn is_cpu_meter(name: &str) -> bool {
-    name == "AllCPUs" || name.starts_with("CPUs")
+    matches!(name, "AllCPUs" | "AllCPUs2" | "AllCPUs4" | "AllCPUs8") || name.starts_with("CPUs")
+}
+
+/// Get the forced sub-column count for a specific CPU meter variant.
+/// Returns None for "AllCPUs" (auto-detect) and a fixed count for explicit variants.
+fn cpu_meter_subcols(name: &str) -> Option<usize> {
+    match name {
+        "AllCPUs2" => Some(2),  // htop AllCPUs2: 2 sub-columns per panel
+        "AllCPUs4" => Some(4),  // htop AllCPUs4: 4 sub-columns per panel
+        "AllCPUs8" => Some(8),  // htop AllCPUs8: 8 sub-columns per panel
+        _ => None,              // AllCPUs: auto-detect
+    }
 }
 
 /// Render CPU bars for a range of cores into the given rows
@@ -270,35 +275,46 @@ fn draw_compact_header(f: &mut Frame, app: &App, area: Rect) {
         .constraints([Constraint::Length(1), Constraint::Length(1)])
         .split(area);
 
-    // Aggregate CPU bar
+    // Aggregate CPU bar using averaged per-core fractions
     let cores = &app.cpu_info.cores;
-    let avg_usage: f64 = if cores.is_empty() {
-        0.0
-    } else {
-        cores.iter().map(|c| c.usage_percent as f64).sum::<f64>() / cores.len() as f64
-    };
     let cs = &app.color_scheme;
-    let usage_frac = avg_usage / 100.0;
+    let n = cores.len().max(1) as f64;
+
+    let avg_user = cores.iter().map(|c| c.user_frac as f64).sum::<f64>() / n;
+    let avg_kernel = cores.iter().map(|c| c.kernel_frac as f64).sum::<f64>() / n;
+    let avg_dpc = cores.iter().map(|c| c.dpc_frac as f64).sum::<f64>() / n;
+    let avg_interrupt = cores.iter().map(|c| c.interrupt_frac as f64).sum::<f64>() / n;
+
+    let avg_usage = cores.iter().map(|c| c.usage_percent as f64).sum::<f64>() / n;
     let text = format!("{:.1}%", avg_usage);
-    let (user_frac_bar, kernel_frac_bar) = if app.detailed_cpu_time {
-        let total = app.cpu_user_frac + app.cpu_kernel_frac;
-        if total > 0.0 {
-            (app.cpu_user_frac / total * usage_frac, app.cpu_kernel_frac / total * usage_frac)
-        } else {
-            (usage_frac, 0.0)
-        }
+
+    if app.detailed_cpu_time {
+        draw_htop_bar(
+            f,
+            "CPU",
+            &[
+                (avg_user, cs.cpu_bar_normal),
+                (avg_kernel, cs.cpu_bar_system),
+                (avg_interrupt, cs.cpu_bar_irq),
+                (avg_dpc, cs.cpu_bar_softirq),
+            ],
+            &text,
+            cs.cpu_label,
+            cs.cpu_bar_bg,
+            rows[0],
+        );
     } else {
-        (usage_frac * 0.7, usage_frac * 0.3)
-    };
-    draw_htop_bar(
-        f,
-        "CPU",
-        &[(user_frac_bar, cs.cpu_bar_normal), (kernel_frac_bar, cs.cpu_bar_system)],
-        &text,
-        cs.cpu_label,
-        cs.cpu_bar_bg,
-        rows[0],
-    );
+        let sys = avg_kernel + avg_dpc + avg_interrupt;
+        draw_htop_bar(
+            f,
+            "CPU",
+            &[(avg_user, cs.cpu_bar_normal), (sys, cs.cpu_bar_system)],
+            &text,
+            cs.cpu_label,
+            cs.cpu_bar_bg,
+            rows[0],
+        );
+    }
 
     // Memory bar (reuse existing logic inline for compactness)
     draw_memory_bar(f, app, rows[1]);
@@ -389,41 +405,59 @@ fn draw_htop_bar(
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-/// Draw a single CPU core usage bar with htop's multi-color scheme:
-///   Green  = normal (user) processes
-///   Red    = kernel / system processes
+/// Draw a single CPU core usage bar with htop's multi-color scheme.
 ///
-/// When detailed_cpu_time is ON, uses real GetSystemTimes data for user/kernel split.
-/// When OFF, uses a 70/30 visual approximation.
-fn draw_cpu_bar(f: &mut Frame, core: &crate::system::cpu::CpuCore, area: Rect, cs: &crate::color_scheme::ColorScheme, cpu_from_zero: bool, user_frac: f64, kernel_frac: f64, detailed: bool) {
-    let usage = core.usage_percent;
+/// Basic mode (htop default):
+///   Green  = user processes
+///   Red    = kernel (includes DPC + interrupt, like htop bundles irq/softirq into sys)
+///
+/// Detailed mode (htop detailed_cpu_time):
+///   Green   = user processes
+///   Red     = pure kernel
+///   Yellow  = interrupt time (≈ htop IRQ)
+///   Magenta = DPC time (≈ htop softIRQ)
+///
+/// Uses per-core time fractions from NtQuerySystemInformation for accurate display.
+fn draw_cpu_bar(f: &mut Frame, core: &crate::system::cpu::CpuCore, area: Rect, cs: &crate::color_scheme::ColorScheme, cpu_from_zero: bool, _user_frac: f64, _kernel_frac: f64, detailed: bool) {
     let display_id = if cpu_from_zero { core.id } else { core.id + 1 };
     let caption = format!("{:>3}", display_id);
-    let text = format!("{:.1}%", usage);
+    let text = format!("{:.1}%", core.usage_percent);
 
-    let usage_frac = usage as f64 / 100.0;
-
-    // Compute user/kernel split
-    let (user_frac_bar, kernel_frac_bar) = if detailed {
-        let total = user_frac + kernel_frac;
-        if total > 0.0 {
-            (user_frac / total * usage_frac, kernel_frac / total * usage_frac)
-        } else {
-            (usage_frac, 0.0)
-        }
+    if detailed {
+        // Detailed mode: show user + kernel + interrupt + DPC as separate segments
+        // Per-core fracs are fractions of total time (including idle)
+        draw_htop_bar(
+            f,
+            &caption,
+            &[
+                (core.user_frac as f64, cs.cpu_bar_normal),       // green: user
+                (core.kernel_frac as f64, cs.cpu_bar_system),     // red: pure kernel
+                (core.interrupt_frac as f64, cs.cpu_bar_irq),     // yellow: interrupt (≈ irq)
+                (core.dpc_frac as f64, cs.cpu_bar_softirq),       // magenta: DPC (≈ softirq)
+            ],
+            &text,
+            cs.cpu_label,
+            cs.cpu_bar_bg,
+            area,
+        );
     } else {
-        (usage_frac * 0.7, usage_frac * 0.3)
-    };
-
-    draw_htop_bar(
-        f,
-        &caption,
-        &[(user_frac_bar, cs.cpu_bar_normal), (kernel_frac_bar, cs.cpu_bar_system)],
-        &text,
-        cs.cpu_label,
-        cs.cpu_bar_bg,
-        area,
-    );
+        // Basic mode: user (green) + kernel including DPC+interrupt (red)
+        // This matches htop basic mode where sys = kernel + irq + softirq
+        let user = core.user_frac as f64;
+        let sys = core.kernel_frac as f64 + core.dpc_frac as f64 + core.interrupt_frac as f64;
+        draw_htop_bar(
+            f,
+            &caption,
+            &[
+                (user, cs.cpu_bar_normal),  // green: user
+                (sys, cs.cpu_bar_system),   // red: all kernel-mode
+            ],
+            &text,
+            cs.cpu_label,
+            cs.cpu_bar_bg,
+            area,
+        );
+    }
 }
 
 /// Draw the memory usage bar with htop's multi-color scheme:
@@ -557,15 +591,19 @@ fn draw_uptime_line(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Paragraph::new(line), area);
 }
 
-/// Format uptime as DD days, HH:MM:SS (matching htop)
+/// Format uptime as DD days, HH:MM:SS (matching htop UptimeMeter.c exactly)
 fn format_uptime(seconds: u64) -> String {
     let days = seconds / 86400;
     let hours = (seconds % 86400) / 3600;
     let minutes = (seconds % 3600) / 60;
     let secs = seconds % 60;
 
-    if days > 0 {
+    if days > 100 {
+        format!("{} days(!), {:02}:{:02}:{:02}", days, hours, minutes, secs)
+    } else if days > 1 {
         format!("{} days, {:02}:{:02}:{:02}", days, hours, minutes, secs)
+    } else if days == 1 {
+        format!("1 day, {:02}:{:02}:{:02}", hours, minutes, secs)
     } else {
         format!("{:02}:{:02}:{:02}", hours, minutes, secs)
     }
@@ -638,33 +676,44 @@ fn draw_vram_bar(f: &mut Frame, app: &App, area: Rect) {
 /// Draw a single aggregate CPU average bar
 fn draw_cpu_average_bar(f: &mut Frame, app: &App, area: Rect) {
     let cores = &app.cpu_info.cores;
-    let avg_usage: f64 = if cores.is_empty() {
-        0.0
-    } else {
-        cores.iter().map(|c| c.usage_percent as f64).sum::<f64>() / cores.len() as f64
-    };
     let cs = &app.color_scheme;
-    let usage_frac = avg_usage / 100.0;
+    let n = cores.len().max(1) as f64;
+
+    let avg_user = cores.iter().map(|c| c.user_frac as f64).sum::<f64>() / n;
+    let avg_kernel = cores.iter().map(|c| c.kernel_frac as f64).sum::<f64>() / n;
+    let avg_dpc = cores.iter().map(|c| c.dpc_frac as f64).sum::<f64>() / n;
+    let avg_interrupt = cores.iter().map(|c| c.interrupt_frac as f64).sum::<f64>() / n;
+
+    let avg_usage = cores.iter().map(|c| c.usage_percent as f64).sum::<f64>() / n;
     let text = format!("{:.1}%", avg_usage);
-    let (user_frac_bar, kernel_frac_bar) = if app.detailed_cpu_time {
-        let total = app.cpu_user_frac + app.cpu_kernel_frac;
-        if total > 0.0 {
-            (app.cpu_user_frac / total * usage_frac, app.cpu_kernel_frac / total * usage_frac)
-        } else {
-            (usage_frac, 0.0)
-        }
+
+    if app.detailed_cpu_time {
+        draw_htop_bar(
+            f,
+            "CPU",
+            &[
+                (avg_user, cs.cpu_bar_normal),
+                (avg_kernel, cs.cpu_bar_system),
+                (avg_interrupt, cs.cpu_bar_irq),
+                (avg_dpc, cs.cpu_bar_softirq),
+            ],
+            &text,
+            cs.cpu_label,
+            cs.cpu_bar_bg,
+            area,
+        );
     } else {
-        (usage_frac * 0.7, usage_frac * 0.3)
-    };
-    draw_htop_bar(
-        f,
-        "CPU",
-        &[(user_frac_bar, cs.cpu_bar_normal), (kernel_frac_bar, cs.cpu_bar_system)],
-        &text,
-        cs.cpu_label,
-        cs.cpu_bar_bg,
-        area,
-    );
+        let sys = avg_kernel + avg_dpc + avg_interrupt;
+        draw_htop_bar(
+            f,
+            "CPU",
+            &[(avg_user, cs.cpu_bar_normal), (sys, cs.cpu_bar_system)],
+            &text,
+            cs.cpu_label,
+            cs.cpu_bar_bg,
+            area,
+        );
+    }
 }
 
 /// Draw clock: "Clock: HH:MM:SS"

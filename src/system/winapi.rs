@@ -896,19 +896,32 @@ pub fn quick_enumerate_pids() -> Vec<u32> {
 // times in a single <1ms syscall.
 
 /// Per-core performance counter snapshot.
+/// Maps to SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION from NtQuerySystemInformation.
 #[repr(C)]
 struct ProcessorPerformanceInfo {
     idle_time: i64,
-    kernel_time: i64,  // includes idle
+    kernel_time: i64,      // includes idle + dpc + interrupt
     user_time: i64,
-    _reserved: [i64; 2],
+    dpc_time: i64,         // Deferred Procedure Call time (analogous to Linux softirq)
+    interrupt_time: i64,   // Hardware interrupt time (analogous to Linux irq)
     _interrupt_count: u32,
+}
+
+/// Per-core CPU time sample with breakdown into user/kernel/dpc/interrupt.
+/// Fractions are of total time (including idle), so they sum to usage%/100.
+pub struct CpuCoreSample {
+    pub usage_percent: f32,
+    pub user_frac: f32,      // fraction of total time in user mode
+    pub kernel_frac: f32,    // fraction in pure kernel (excl idle, dpc, interrupt)
+    pub dpc_frac: f32,       // fraction in DPC (≈ Linux softirq)
+    pub interrupt_frac: f32, // fraction in interrupt (≈ Linux irq)
 }
 
 /// Per-core CPU usage tracker using NtQuerySystemInformation.
 /// Takes one snapshot on creation, then computes deltas on each `sample()` call.
 pub struct NativeCpuMonitor {
-    prev: Vec<(u64, u64, u64)>,  // (idle, kernel, user) per core
+    // (idle, kernel, user, dpc, interrupt) per core
+    prev: Vec<(u64, u64, u64, u64, u64)>,
     /// Cached CPU brand string
     pub brand: String,
     /// Cached CPU frequency (MHz)
@@ -918,9 +931,9 @@ pub struct NativeCpuMonitor {
 impl NativeCpuMonitor {
     pub fn new() -> Self {
         let snapshot = Self::query_processor_times();
-        let prev: Vec<(u64, u64, u64)> = snapshot
+        let prev: Vec<(u64, u64, u64, u64, u64)> = snapshot
             .iter()
-            .map(|s| (s.0, s.1, s.2))
+            .map(|s| (s.0, s.1, s.2, s.3, s.4))
             .collect();
 
         // Get CPU brand + frequency once via CPUID/registry
@@ -934,37 +947,54 @@ impl NativeCpuMonitor {
         self.prev.len()
     }
 
-    /// Sample and return per-core CPU usage percentages.
-    pub fn sample(&mut self) -> Vec<f32> {
+    /// Sample and return per-core CPU usage with time breakdown.
+    pub fn sample(&mut self) -> Vec<CpuCoreSample> {
         let current = Self::query_processor_times();
-        let mut usage = Vec::with_capacity(current.len());
+        let mut samples = Vec::with_capacity(current.len());
 
-        for (i, &(idle, kernel, user)) in current.iter().enumerate() {
+        for (i, &(idle, kernel, user, dpc, interrupt)) in current.iter().enumerate() {
             if i < self.prev.len() {
-                let (prev_idle, prev_kernel, prev_user) = self.prev[i];
+                let (prev_idle, prev_kernel, prev_user, prev_dpc, prev_interrupt) = self.prev[i];
                 let d_idle = idle.wrapping_sub(prev_idle);
                 let d_kernel = kernel.wrapping_sub(prev_kernel);
                 let d_user = user.wrapping_sub(prev_user);
-                // kernel includes idle, so active_kernel = kernel - idle
-                let active = d_user + d_kernel.saturating_sub(d_idle);
-                let total = d_user + d_kernel; // kernel already includes idle
-                let pct = if total > 0 {
-                    (active as f64 / total as f64 * 100.0) as f32
+                let d_dpc = dpc.wrapping_sub(prev_dpc);
+                let d_interrupt = interrupt.wrapping_sub(prev_interrupt);
+
+                // kernel includes idle+dpc+interrupt, so total = user + kernel
+                let total = d_user + d_kernel;
+                if total > 0 {
+                    let tf = total as f64;
+                    let active = d_user + d_kernel.saturating_sub(d_idle);
+                    let pure_kernel = d_kernel.saturating_sub(d_idle).saturating_sub(d_dpc).saturating_sub(d_interrupt);
+                    samples.push(CpuCoreSample {
+                        usage_percent: (active as f64 / tf * 100.0).clamp(0.0, 100.0) as f32,
+                        user_frac: (d_user as f64 / tf) as f32,
+                        kernel_frac: (pure_kernel as f64 / tf) as f32,
+                        dpc_frac: (d_dpc as f64 / tf) as f32,
+                        interrupt_frac: (d_interrupt as f64 / tf) as f32,
+                    });
                 } else {
-                    0.0
-                };
-                usage.push(pct.clamp(0.0, 100.0));
+                    samples.push(CpuCoreSample {
+                        usage_percent: 0.0, user_frac: 0.0, kernel_frac: 0.0,
+                        dpc_frac: 0.0, interrupt_frac: 0.0,
+                    });
+                }
             } else {
-                usage.push(0.0);
+                samples.push(CpuCoreSample {
+                    usage_percent: 0.0, user_frac: 0.0, kernel_frac: 0.0,
+                    dpc_frac: 0.0, interrupt_frac: 0.0,
+                });
             }
         }
 
-        self.prev = current.iter().map(|s| (s.0, s.1, s.2)).collect();
-        usage
+        self.prev = current.iter().map(|s| (s.0, s.1, s.2, s.3, s.4)).collect();
+        samples
     }
 
     // Query per-processor times via NtQuerySystemInformation(SystemProcessorPerformanceInformation)
-    fn query_processor_times() -> Vec<(u64, u64, u64)> {
+    // Returns (idle, kernel, user, dpc, interrupt) per core
+    fn query_processor_times() -> Vec<(u64, u64, u64, u64, u64)> {
         use ntapi::ntexapi::NtQuerySystemInformation;
         const SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION: u32 = 8;
 
@@ -995,7 +1025,13 @@ impl NativeCpuMonitor {
 
             entries
                 .iter()
-                .map(|e| (e.idle_time as u64, e.kernel_time as u64, e.user_time as u64))
+                .map(|e| (
+                    e.idle_time as u64,
+                    e.kernel_time as u64,
+                    e.user_time as u64,
+                    e.dpc_time as u64,
+                    e.interrupt_time as u64,
+                ))
                 .collect()
         }
     }

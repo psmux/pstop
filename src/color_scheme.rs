@@ -75,7 +75,8 @@ pub struct ColorScheme {
     pub cpu_bar_low: Color,        // Low priority (nice > 0)
     pub cpu_bar_virt: Color,       // Virtual/steal/guest
     pub cpu_bar_iowait: Color,     // IO wait (detailed mode)
-    pub cpu_bar_irq: Color,        // IRQ (detailed mode)
+    pub cpu_bar_irq: Color,        // Hardware interrupt / IRQ (detailed mode)
+    pub cpu_bar_softirq: Color,    // DPC / soft IRQ (detailed mode)
     pub cpu_label: Color,          // CPU number label
     pub cpu_bar_bg: Color,         // Bar background char color
 
@@ -174,7 +175,8 @@ impl ColorScheme {
             cpu_bar_low: Color::Blue,
             cpu_bar_virt: Color::Cyan,
             cpu_bar_iowait: Color::DarkGray,
-            cpu_bar_irq: Color::Magenta,
+            cpu_bar_irq: Color::Yellow,
+            cpu_bar_softirq: Color::Magenta,
             cpu_label: Color::White,
             cpu_bar_bg: Color::DarkGray,
 
@@ -254,6 +256,7 @@ impl ColorScheme {
             cpu_bar_virt: Color::White,
             cpu_bar_iowait: Color::White,
             cpu_bar_irq: Color::White,
+            cpu_bar_softirq: Color::White,
             cpu_label: Color::White,
             cpu_bar_bg: Color::DarkGray,
 
@@ -332,7 +335,8 @@ impl ColorScheme {
             cpu_bar_low: Color::Indexed(33),   // Bright blue
             cpu_bar_virt: Color::Cyan,
             cpu_bar_iowait: Color::Indexed(245),
-            cpu_bar_irq: Color::Magenta,
+            cpu_bar_irq: Color::Yellow,
+            cpu_bar_softirq: Color::Magenta,
             cpu_label: Color::Indexed(250),
             cpu_bar_bg: Color::Indexed(238),
 
@@ -411,7 +415,8 @@ impl ColorScheme {
             cpu_bar_low: Color::Blue,
             cpu_bar_virt: Color::Cyan,
             cpu_bar_iowait: Color::DarkGray,
-            cpu_bar_irq: Color::Magenta,
+            cpu_bar_irq: Color::Yellow,
+            cpu_bar_softirq: Color::Magenta,
             cpu_label: Color::Black,
             cpu_bar_bg: Color::Indexed(252),
 
@@ -490,7 +495,8 @@ impl ColorScheme {
             cpu_bar_low: Color::Cyan,
             cpu_bar_virt: Color::Yellow,
             cpu_bar_iowait: Color::DarkGray,
-            cpu_bar_irq: Color::Magenta,
+            cpu_bar_irq: Color::Yellow,
+            cpu_bar_softirq: Color::Magenta,
             cpu_label: Color::White,
             cpu_bar_bg: Color::Indexed(17),
 
@@ -569,7 +575,8 @@ impl ColorScheme {
             cpu_bar_low: Color::Indexed(25),     // Dark blue
             cpu_bar_virt: Color::Indexed(30),    // Dark cyan
             cpu_bar_iowait: Color::Indexed(245),
-            cpu_bar_irq: Color::Indexed(127),
+            cpu_bar_irq: Color::Indexed(136),
+            cpu_bar_softirq: Color::Indexed(127),
             cpu_label: Color::Black,
             cpu_bar_bg: Color::Indexed(252),
 
@@ -648,7 +655,8 @@ impl ColorScheme {
             cpu_bar_low: Color::Indexed(39),       // Bright blue
             cpu_bar_virt: Color::Indexed(51),      // Bright cyan
             cpu_bar_iowait: Color::Indexed(245),
-            cpu_bar_irq: Color::Indexed(201),      // Bright magenta
+            cpu_bar_irq: Color::Indexed(226),      // Bright yellow
+            cpu_bar_softirq: Color::Indexed(201),    // Bright magenta
             cpu_label: Color::White,
             cpu_bar_bg: Color::Indexed(235),
 
