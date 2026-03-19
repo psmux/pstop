@@ -34,6 +34,7 @@ pub struct PstopConfig {
     pub update_process_names: bool,
     pub show_thread_names: bool,
     pub enable_mouse: bool,
+    pub vim_keys: bool,
     pub update_interval_ms: u64,
 
     // Color scheme
@@ -69,6 +70,7 @@ impl Default for PstopConfig {
             update_process_names: false,
             show_thread_names: false,
             enable_mouse: true,
+            vim_keys: false,
             update_interval_ms: 1500,
             color_scheme_id: ColorSchemeId::Default,
             sort_field: ProcessSortField::Cpu,
@@ -129,6 +131,7 @@ impl PstopConfig {
                     "update_process_names" => cfg.update_process_names = value == "1",
                     "show_thread_names" => cfg.show_thread_names = value == "1",
                     "enable_mouse" => cfg.enable_mouse = value == "1",
+                    "vim_keys" => cfg.vim_keys = value == "1",
                     "update_interval_ms" => {
                         if let Ok(v) = value.parse::<u64>() {
                             cfg.update_interval_ms = v.max(200).min(10000);
@@ -220,6 +223,7 @@ impl PstopConfig {
         lines.push(format!("update_process_names={}", b(self.update_process_names)));
         lines.push(format!("show_thread_names={}", b(self.show_thread_names)));
         lines.push(format!("enable_mouse={}", b(self.enable_mouse)));
+        lines.push(format!("vim_keys={}", b(self.vim_keys)));
         lines.push(format!("update_interval_ms={}", self.update_interval_ms));
         lines.push(format!("color_scheme={}", self.color_scheme_id as usize));
         
@@ -267,6 +271,7 @@ impl PstopConfig {
             update_process_names: app.update_process_names,
             show_thread_names: app.show_thread_names,
             enable_mouse: app.enable_mouse,
+            vim_keys: app.vim_keys,
             update_interval_ms: app.update_interval_ms,
             color_scheme_id: app.color_scheme_id,
             sort_field: app.sort_field,
@@ -298,6 +303,7 @@ impl PstopConfig {
         app.update_process_names = self.update_process_names;
         app.show_thread_names = self.show_thread_names;
         app.enable_mouse = self.enable_mouse;
+        app.vim_keys = self.vim_keys;
         app.update_interval_ms = self.update_interval_ms;
         app.color_scheme_id = self.color_scheme_id;
         app.color_scheme = ColorScheme::from_id(self.color_scheme_id);

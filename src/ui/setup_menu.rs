@@ -35,6 +35,7 @@ const DISPLAY_OPTIONS: &[&str] = &[
     "Show full program paths",
     "Show merged command",
     "Enable mouse control",
+    "Vim-style keys (j/k/g/G/Ctrl-u/d)",
 ];
 
 // ── Main draw entry ─────────────────────────────────────────────────────────
@@ -276,6 +277,7 @@ fn draw_display_options(f: &mut Frame, app: &App, area: Rect) {
         app.show_full_path,
         app.show_merged_command,
         app.enable_mouse,
+        app.vim_keys,
     ];
 
     for (idx, (label, &value)) in DISPLAY_OPTIONS.iter().zip(toggle_values.iter()).enumerate() {

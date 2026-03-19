@@ -36,6 +36,13 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Down  => app.select_next(),
         KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::ALT) => app.select_prev(),
         KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::ALT) => app.select_next(),
+        // ── Vim-style navigation (when vim_keys enabled) ──
+        KeyCode::Char('k') if app.vim_keys && key.modifiers == KeyModifiers::NONE => app.select_prev(),
+        KeyCode::Char('j') if app.vim_keys && key.modifiers == KeyModifiers::NONE => app.select_next(),
+        KeyCode::Char('g') if app.vim_keys => app.select_first(),
+        KeyCode::Char('G') if app.vim_keys => app.select_last(),
+        KeyCode::Char('d') if app.vim_keys && key.modifiers.contains(KeyModifiers::CONTROL) => app.half_page_down(),
+        KeyCode::Char('u') if app.vim_keys && key.modifiers.contains(KeyModifiers::CONTROL) => app.half_page_up(),
         KeyCode::PageUp  => app.page_up(),
         KeyCode::PageDown => app.page_down(),
         KeyCode::Home  => app.select_first(),
@@ -62,7 +69,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
 
         // ── Help ──
         KeyCode::F(1) | KeyCode::Char('?') => app.mode = AppMode::Help,
-        KeyCode::Char('h') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+        KeyCode::Char('h') if !app.vim_keys && !key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.mode = AppMode::Help;
         }
 
@@ -136,8 +143,14 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
             }
         }
 
-        // ── F9 / k — kill (htop: k = kill) ──
-        KeyCode::F(9) | KeyCode::Char('k') => {
+        // ── F9 / k — kill (htop: k = kill; vim_keys: x = kill) ──
+        KeyCode::F(9) => {
+            app.mode = AppMode::Kill;
+        }
+        KeyCode::Char('k') if !app.vim_keys => {
+            app.mode = AppMode::Kill;
+        }
+        KeyCode::Char('x') if app.vim_keys => {
             app.mode = AppMode::Kill;
         }
 
@@ -542,7 +555,7 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
                 meter_list.len().saturating_sub(1)
             }
         }
-        1 => 14, // 14 display options + interval row
+        1 => 15, // 15 display options + interval row
         2 => ColorSchemeId::all().len().saturating_sub(1),
         3 => all_fields.len().saturating_sub(1), // All fields, not just visible ones
         4 => 1, // Reset: 0=confirm, 1=cancel
@@ -673,6 +686,7 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
                             11 => app.show_full_path = !app.show_full_path,
                             12 => app.show_merged_command = !app.show_merged_command,
                             13 => app.enable_mouse = !app.enable_mouse,
+                            14 => app.vim_keys = !app.vim_keys,
                             _ => {} // interval row, use +/-
                         }
                     }

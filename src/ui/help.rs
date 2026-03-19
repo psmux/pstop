@@ -61,6 +61,13 @@ pub fn draw_help(f: &mut Frame) {
         Line::from("  0-9         Quick PID search"),
         Line::from("  Ctrl+C      Quit"),
         Line::from(""),
+        Line::from(Span::styled(" Vim Keys (F2 > Display > enable) ", Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow))),
+        Line::from("  j/k         Move down/up"),
+        Line::from("  g/G         Jump to first/last process"),
+        Line::from("  Ctrl+d/u    Half page down/up"),
+        Line::from("  x           Kill process (replaces k)"),
+        Line::from("  /           Search (same as default)"),
+        Line::from(""),
         Line::from(Span::styled(
             " Press Esc or F1 to close ",
             Style::default().fg(Color::DarkGray),

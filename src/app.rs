@@ -163,6 +163,7 @@ pub struct App {
     pub update_process_names: bool,     // Refresh process names each cycle
     pub show_thread_names: bool,        // Show custom thread names
     pub enable_mouse: bool,             // Mouse support on/off
+    pub vim_keys: bool,                 // Vim-style keybindings (j/k/g/G/Ctrl-u/Ctrl-d)
     pub update_interval_ms: u64,        // Configurable refresh rate
 
     // Color scheme
@@ -313,6 +314,7 @@ impl App {
             update_process_names: false,
             show_thread_names: false,
             enable_mouse: true,
+            vim_keys: false,
             update_interval_ms: 1500,
 
             color_scheme_id: ColorSchemeId::Default,
@@ -594,6 +596,36 @@ impl App {
             if idx_val >= *scroll + visible {
                 *scroll = idx_val - visible + 1;
             }
+        }
+    }
+
+    /// Half page up (Ctrl-U in vim mode)
+    pub fn half_page_up(&mut self) {
+        let half = self.visible_rows / 2;
+        let idx = self.active_selected_index_mut();
+        if *idx > half {
+            *idx -= half;
+        } else {
+            *idx = 0;
+        }
+        let idx_val = *idx;
+        let scroll = self.active_scroll_offset_mut();
+        if idx_val < *scroll {
+            *scroll = idx_val;
+        }
+    }
+
+    /// Half page down (Ctrl-D in vim mode)
+    pub fn half_page_down(&mut self) {
+        let max = self.active_list_len().saturating_sub(1);
+        let half = self.visible_rows / 2;
+        let visible = self.visible_rows;
+        let idx = self.active_selected_index_mut();
+        *idx = (*idx + half).min(max);
+        let idx_val = *idx;
+        let scroll = self.active_scroll_offset_mut();
+        if idx_val >= *scroll + visible {
+            *scroll = idx_val - visible + 1;
         }
     }
 
