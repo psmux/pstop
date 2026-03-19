@@ -145,7 +145,7 @@ Press `F5` or `t` to toggle process tree view — see parent-child relationships
 ### ⚙️ F2 Setup Menu (Full htop Parity)
 Press `F2` to open the setup menu with 4 categories:
 - **Meters** - Configure header layout (CPU, Memory, Swap, Network, Tasks, Load, Uptime)
-- **Display Options** - 14 toggleable settings (tree view, highlight basename, shadow other users, show threads, detailed CPU time, and more)
+- **Display Options** - 15 toggleable settings (tree view, highlight basename, shadow other users, show threads, detailed CPU time, vim keys, and more)
 - **Colors** - Choose from 7 built-in color schemes with **live preview**
 - **Columns** - Add/remove/reorder visible columns
 
@@ -211,6 +211,36 @@ All settings auto-save to `%APPDATA%/pstop/pstoprc` and restore on next launch. 
 | `PgUp` / `PgDn` | Page through process list |
 | `Home` / `End` | Jump to first / last process |
 
+### Vim Mode (opt-in)
+
+Enable via `F2` > Display Options > **Vim-style keys**, or set `vim_keys=1` in your config file. Off by default.
+
+| Key | Vim Mode Action | Replaces |
+|-----|----------------|----------|
+| `j` | Move down | *(new — default mode has no bare `j`)* |
+| `k` | Move up | `k` = kill in default mode |
+| `g` | Jump to first process | `Home` |
+| `G` | Jump to last process | `End` |
+| `Ctrl+d` | Half page down | *(new)* |
+| `Ctrl+u` | Half page up | *(new)* |
+| `x` | Kill process | `k` / `F9` |
+| `/` | Search | *(unchanged, works in both modes)* |
+| `?` | Help | *(unchanged, works in both modes)* |
+
+**What changes in vim mode:**
+- `k` becomes **move up** instead of kill — use `x` or `F9` to kill
+- `h` no longer opens help — use `?` or `F1` instead
+- `j`/`k` work as bare keys (no `Alt` modifier needed)
+- All other keys (`F1`–`F10`, `Space`, `u`, `t`, `e`, `l`, `a`, etc.) remain unchanged
+
+**What stays the same:**
+- Arrow keys, PgUp/PgDn, Home/End still work
+- All F-key shortcuts (`F1`–`F10`) still work
+- `/` for search, `\` for filter
+- `q` to quit, `Ctrl+C` to quit
+- All sorting keys (`P`, `M`, `T`, `N`, `I`, `<`, `>`)
+- Tree view (`t`/`F5`), tags (`Space`/`c`/`U`), user filter (`u`)
+
 ---
 
 ## Color Schemes
@@ -241,11 +271,16 @@ Settings are saved automatically to:
 
 Format: simple `key=value` (htoprc-style). Persisted settings include:
 - Color scheme
-- All 14 display options
+- All 15 display options (including vim keys mode)
 - Visible columns
 - Sort field & direction
 - Update interval
 - Tree view state
+
+To enable vim keys from the config file directly:
+```
+vim_keys=1
+```
 
 ---
 
@@ -267,6 +302,7 @@ Format: simple `key=value` (htoprc-style). Persisted settings include:
 - [x] Network per-process tracking (live bandwidth, no admin required)
 - [x] Auto-adjusting CPU column layout (2/4/8/16 columns based on core count)
 - [x] Independent htop-style header panel flow (no forced alignment)
+- [x] Vim-style keybindings (opt-in `j`/`k`/`g`/`G`/`Ctrl-u`/`Ctrl-d`)
 - [ ] Scoop bucket
 - [ ] Custom meter plugins
 
