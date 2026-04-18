@@ -39,6 +39,12 @@ use system::collector::Collector;
 const TICK_RATE_MS: u64 = 1500;
 
 fn main() -> Result<()> {
+    // Register a Windows console control handler to guarantee clean exit
+    // when the terminal window is closed, user logs off, or system shuts down.
+    // Without this, raw mode prevents the default handler from terminating the
+    // process, leaving zombie pstop.exe instances in the process list.
+    install_console_ctrl_handler();
+
     let startup_time = Instant::now();
 
     // Start Collector initialization ASAP — the ~182ms sysinfo CPU init
@@ -116,6 +122,36 @@ fn main() -> Result<()> {
     // Force-exit to kill any lingering background threads (collector
     // batch threads for I/O counters, process data, etc.).
     std::process::exit(0);
+}
+
+/// Register a Windows console control handler that force-terminates the process
+/// on CTRL_CLOSE_EVENT (terminal window closed), CTRL_LOGOFF_EVENT, and
+/// CTRL_SHUTDOWN_EVENT. This prevents zombie processes when the user closes
+/// the terminal tab/window instead of pressing 'q'.
+fn install_console_ctrl_handler() {
+    use windows::Win32::System::Console::{SetConsoleCtrlHandler, PHANDLER_ROUTINE};
+    use windows::core::BOOL;
+
+    unsafe extern "system" fn handler(ctrl_type: u32) -> BOOL {
+        // CTRL_CLOSE_EVENT = 2, CTRL_LOGOFF_EVENT = 5, CTRL_SHUTDOWN_EVENT = 6,
+        // CTRL_BREAK_EVENT = 1
+        match ctrl_type {
+            0 => {
+                // CTRL_C_EVENT: force exit (raw mode swallows the normal key event
+                // when the console is disconnecting)
+                std::process::exit(0);
+            }
+            1 | 2 | 5 | 6 => {
+                // CTRL_BREAK / CTRL_CLOSE / CTRL_LOGOFF / CTRL_SHUTDOWN
+                std::process::exit(0);
+            }
+            _ => BOOL(0), // not handled
+        }
+    }
+
+    unsafe {
+        let _ = SetConsoleCtrlHandler(PHANDLER_ROUTINE::Some(handler), true);
+    }
 }
 
 /// Main application loop
