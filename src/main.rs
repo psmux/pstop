@@ -68,6 +68,10 @@ fn main() -> Result<()> {
                 drop(collector_handle);
                 return run_benchmark();
             }
+            "--version" | "-V" => {
+                println!("{}", version_string());
+                return Ok(());
+            }
             "--help" | "-h" => {
                 println!("pstop — An htop-like system monitor for Windows");
                 println!();
@@ -77,6 +81,7 @@ fn main() -> Result<()> {
                 println!("  --compact, -c     Compact mode (minimal header, ideal for small screens/mobile)");
                 println!("  --bench           Benchmark startup time and exit");
                 println!("  --install-alias   Add 'htop' alias to your PowerShell profile");
+                println!("  --version, -V     Print version and build commit, then exit");
                 println!("  --help, -h        Show this help message");
                 return Ok(());
             }
@@ -122,6 +127,32 @@ fn main() -> Result<()> {
     // Force-exit to kill any lingering background threads (collector
     // batch threads for I/O counters, process data, etc.).
     std::process::exit(0);
+}
+
+/// Build the version banner shown by `--version` / `-V`.
+///
+/// Combines the crate version with the exact git commit the binary was built
+/// from (captured at compile time by `build.rs`). Example outputs:
+///
+///   pstop 0.5.4 (56b742b 2026-07-13)
+///   pstop 0.5.4 (56b742b 2026-07-13, dirty)   ← built from a modified tree
+///   pstop 0.5.4 (unknown commit)              ← built without a git checkout
+fn version_string() -> String {
+    let version = env!("CARGO_PKG_VERSION");
+    let hash = env!("PSTOP_GIT_HASH");
+    let date = env!("PSTOP_GIT_DATE");
+    let dirty = env!("PSTOP_GIT_DIRTY") == "true";
+
+    if hash == "unknown" {
+        return format!("pstop {version} (unknown commit)");
+    }
+
+    let dirty_suffix = if dirty { ", dirty" } else { "" };
+    if date == "unknown" {
+        format!("pstop {version} ({hash}{dirty_suffix})")
+    } else {
+        format!("pstop {version} ({hash} {date}{dirty_suffix})")
+    }
 }
 
 /// Register a Windows console control handler that force-terminates the process
