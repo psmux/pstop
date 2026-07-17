@@ -55,7 +55,7 @@ If you've ever missed `htop` on Windows, your search is over. **pstop** brings t
 | Search & filter processes | ✅ | Basic | ❌ |
 | Kill / change priority | ✅ | ✅ | Manual |
 | Mouse support | ✅ | ✅ | ❌ |
-| 7 color schemes | ✅ | ❌ | ❌ |
+| 23 color schemes | ✅ | ❌ | ❌ |
 | Keyboard-driven | ✅ | ❌ | ❌ |
 | Runs in terminal | ✅ | ❌ | ✅ |
 | ~1 MB binary, zero dependencies | ✅ | N/A | N/A |
@@ -146,11 +146,13 @@ Press `F5` or `t` to toggle process tree view — see parent-child relationships
 Press `F2` to open the setup menu with 4 categories:
 - **Meters** - Configure header layout (CPU, Memory, Swap, Network, Tasks, Load, Uptime)
 - **Display Options** - 15 toggleable settings (tree view, highlight basename, shadow other users, show threads, detailed CPU time, vim keys, and more)
-- **Colors** - Choose from 7 built-in color schemes with **live preview**
+- **Colors** - Choose from 23 built-in color schemes with **live preview**
 - **Columns** - Add/remove/reorder visible columns
 
-### 🎨 7 Color Schemes
-Switch instantly in F2 > Colors:
+### 🎨 23 Color Schemes
+Switch instantly in F2 > Colors. Choose from built-in htop schemes plus all 16 Windows Terminal color schemes:
+
+**Original htop Schemes:**
 1. **Default** - Classic htop green/cyan on black
 2. **Monochrome** - Pure white on black
 3. **Black Night** - Muted tones for dark terminals
@@ -158,6 +160,24 @@ Switch instantly in F2 > Colors:
 5. **Midnight Commander** - Blue background, MC-inspired
 6. **Black on White** - Clean light theme
 7. **Dark Vivid** - High-contrast neon colors
+
+**Windows Terminal Built-in Schemes:**
+8. **CGA** - Classic color graphics adapter palette
+9. **Campbell** - Windows Terminal default scheme
+10. **Campbell Powershell** - Campbell on the classic PowerShell blue
+11. **Dark+** - VS Code classic dark theme
+12. **Dimidium** - Warm muted tones
+13. **IBM 5153** - Retro IBM terminal colors
+14. **One Half Dark** - Atom One Half Dark theme
+15. **One Half Light** - Atom One Half Light theme
+16. **Ottosson** - Perceptually balanced palette by Björn Ottosson
+17. **Solarized Dark** - Solarized dark mode
+18. **Solarized Light** - Solarized light mode
+19. **Tango Dark** - Tango desktop environment dark
+20. **Tango Light** - Tango desktop environment light
+21. **Vintage** - Classic terminal colors
+22. **VSCode Dark Modern** - VS Code modern dark theme
+23. **VSCode Light Modern** - VS Code modern light theme
 
 ### 🖱️ Full Mouse Support
 - Click anywhere in the process table to select
@@ -245,17 +265,15 @@ Enable via `F2` > Display Options > **Vim-style keys**, or set `vim_keys=1` in y
 
 ## Color Schemes
 
-All 7 schemes affect every UI element — header bars, process table, footer, tabs, popups:
+All 23 schemes affect every UI element: header bars, process table, footer, tabs, popups. Each scheme provides a cohesive color palette optimized for readability and visual hierarchy.
 
-| Scheme | Best For |
-|--------|----------|
-| Default | Dark terminals (Windows Terminal, Alacritty) |
-| Monochrome | Minimal / accessibility |
-| Black Night | OLED / very dark terminals |
-| Light Terminal | Light-themed terminals |
-| Midnight Commander | Nostalgic blue background |
-| Black on White | Maximum readability on light bg |
-| Dark Vivid | High contrast, colorful |
+The original 7 htop schemes remain the core collection, with 16 Windows Terminal schemes added for users who want consistency across terminal applications.
+
+**Quick Reference:**
+- Need dark mode? Try **Default**, **Dark+**, **One Half Dark**, or **Solarized Dark**
+- Need light mode? Try **Light Terminal**, **One Half Light**, **Solarized Light**, or **VSCode Light Modern**
+- Retro vibes? Try **CGA**, **IBM 5153**, **Campbell**, or **Vintage**
+- High contrast? Try **Dark Vivid**, **Monochrome**, or **VSCode Dark Modern**
 
 Change schemes live: `F2` > Colors > select > `Enter`. Preview updates in real-time.
 

@@ -340,7 +340,26 @@ fn draw_colors_panel(f: &mut Frame, app: &App, area: Rect) {
         .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
         .split(area);
 
-    // Scheme list
+    // Scheme list, windowed/scrollable so it stays usable regardless of how
+    // many schemes are registered.
+    let schemes = ColorSchemeId::all();
+    let total = schemes.len();
+    let is_focused = app.setup_panel == 1;
+    // Index to keep in view: the browsing cursor when the list has focus,
+    // otherwise the currently applied scheme.
+    let follow_idx = if is_focused { app.setup_menu_index } else { app.color_scheme_id as usize };
+
+    // 2 header lines (title + blank) + 2 footer lines (blank + hint) are reserved.
+    const RESERVED_LINES: usize = 4;
+    let visible_rows = (cols[0].height as usize).saturating_sub(RESERVED_LINES).max(1);
+    let scroll_offset = if total > visible_rows {
+        follow_idx
+            .saturating_sub(visible_rows.saturating_sub(1))
+            .min(total.saturating_sub(visible_rows))
+    } else {
+        0
+    };
+
     let mut list_lines = vec![
         Line::from(Span::styled(
             " Color Schemes",
@@ -349,9 +368,9 @@ fn draw_colors_panel(f: &mut Frame, app: &App, area: Rect) {
         Line::from(""),
     ];
 
-    for (idx, scheme_id) in ColorSchemeId::all().iter().enumerate() {
+    for (idx, scheme_id) in schemes.iter().enumerate().skip(scroll_offset).take(visible_rows) {
         let is_current = *scheme_id == app.color_scheme_id;
-        let is_selected = app.setup_panel == 1 && idx == app.setup_menu_index;
+        let is_selected = is_focused && idx == app.setup_menu_index;
 
         let prefix = if is_current { "● " } else { "  " };
         let bg = if is_selected { Color::Indexed(236) } else { Color::Reset };
@@ -378,8 +397,13 @@ fn draw_colors_panel(f: &mut Frame, app: &App, area: Rect) {
     }
 
     list_lines.push(Line::from(""));
+    let hint = if total > visible_rows {
+        format!("  Enter=apply  {}/{}  ↑↓=browse", follow_idx + 1, total)
+    } else {
+        "  Enter=apply  ↑↓=browse".to_string()
+    };
     list_lines.push(Line::from(Span::styled(
-        "  Enter=apply  ↑↓=browse",
+        hint,
         Style::default().fg(Color::DarkGray),
     )));
     f.render_widget(Paragraph::new(list_lines), cols[0]);

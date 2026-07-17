@@ -10,6 +10,22 @@ pub enum ColorSchemeId {
     MidnightCommander = 4,
     BlackOnWhite = 5,
     DarkVivid = 6,
+    Cga = 7,
+    Campbell = 8,
+    CampbellPowershell = 9,
+    DarkPlus = 10,
+    Dimidium = 11,
+    Ibm5153 = 12,
+    OneHalfDark = 13,
+    OneHalfLight = 14,
+    Ottosson = 15,
+    SolarizedDark = 16,
+    SolarizedLight = 17,
+    TangoDark = 18,
+    TangoLight = 19,
+    Vintage = 20,
+    VscodeDarkModern = 21,
+    VscodeLightModern = 22,
 }
 
 impl ColorSchemeId {
@@ -22,6 +38,22 @@ impl ColorSchemeId {
             ColorSchemeId::MidnightCommander,
             ColorSchemeId::BlackOnWhite,
             ColorSchemeId::DarkVivid,
+            ColorSchemeId::Cga,
+            ColorSchemeId::Campbell,
+            ColorSchemeId::CampbellPowershell,
+            ColorSchemeId::DarkPlus,
+            ColorSchemeId::Dimidium,
+            ColorSchemeId::Ibm5153,
+            ColorSchemeId::OneHalfDark,
+            ColorSchemeId::OneHalfLight,
+            ColorSchemeId::Ottosson,
+            ColorSchemeId::SolarizedDark,
+            ColorSchemeId::SolarizedLight,
+            ColorSchemeId::TangoDark,
+            ColorSchemeId::TangoLight,
+            ColorSchemeId::Vintage,
+            ColorSchemeId::VscodeDarkModern,
+            ColorSchemeId::VscodeLightModern,
         ]
     }
 
@@ -34,6 +66,22 @@ impl ColorSchemeId {
             ColorSchemeId::MidnightCommander => "MC",
             ColorSchemeId::BlackOnWhite => "Black on White",
             ColorSchemeId::DarkVivid => "Dark Vivid",
+            ColorSchemeId::Cga => "CGA",
+            ColorSchemeId::Campbell => "Campbell",
+            ColorSchemeId::CampbellPowershell => "Campbell PowerShell",
+            ColorSchemeId::DarkPlus => "Dark+",
+            ColorSchemeId::Dimidium => "Dimidium",
+            ColorSchemeId::Ibm5153 => "IBM 5153",
+            ColorSchemeId::OneHalfDark => "One Half Dark",
+            ColorSchemeId::OneHalfLight => "One Half Light",
+            ColorSchemeId::Ottosson => "Ottosson",
+            ColorSchemeId::SolarizedDark => "Solarized Dark",
+            ColorSchemeId::SolarizedLight => "Solarized Light",
+            ColorSchemeId::TangoDark => "Tango Dark",
+            ColorSchemeId::TangoLight => "Tango Light",
+            ColorSchemeId::Vintage => "Vintage",
+            ColorSchemeId::VscodeDarkModern => "VSCode Dark Modern",
+            ColorSchemeId::VscodeLightModern => "VSCode Light Modern",
         }
     }
 
@@ -46,6 +94,22 @@ impl ColorSchemeId {
             ColorSchemeId::MidnightCommander => "Midnight Commander style",
             ColorSchemeId::BlackOnWhite => "Black text on white background",
             ColorSchemeId::DarkVivid => "Vivid dark colors with contrast",
+            ColorSchemeId::Cga => "Windows Terminal CGA retro palette",
+            ColorSchemeId::Campbell => "Windows Terminal default dark scheme",
+            ColorSchemeId::CampbellPowershell => "Campbell scheme with PowerShell blue background",
+            ColorSchemeId::DarkPlus => "VS Code Dark+ inspired theme",
+            ColorSchemeId::Dimidium => "Windows Terminal Dimidium dark theme",
+            ColorSchemeId::Ibm5153 => "Retro IBM 5153 CGA monitor palette",
+            ColorSchemeId::OneHalfDark => "Atom One Half Dark theme",
+            ColorSchemeId::OneHalfLight => "Atom One Half Light theme",
+            ColorSchemeId::Ottosson => "Windows Terminal Ottosson dark theme",
+            ColorSchemeId::SolarizedDark => "Solarized dark theme",
+            ColorSchemeId::SolarizedLight => "Solarized light theme",
+            ColorSchemeId::TangoDark => "Tango dark palette",
+            ColorSchemeId::TangoLight => "Tango light palette",
+            ColorSchemeId::Vintage => "Classic vintage terminal colors",
+            ColorSchemeId::VscodeDarkModern => "VS Code Dark Modern theme",
+            ColorSchemeId::VscodeLightModern => "VS Code Light Modern theme",
         }
     }
 
@@ -58,6 +122,22 @@ impl ColorSchemeId {
             4 => ColorSchemeId::MidnightCommander,
             5 => ColorSchemeId::BlackOnWhite,
             6 => ColorSchemeId::DarkVivid,
+            7 => ColorSchemeId::Cga,
+            8 => ColorSchemeId::Campbell,
+            9 => ColorSchemeId::CampbellPowershell,
+            10 => ColorSchemeId::DarkPlus,
+            11 => ColorSchemeId::Dimidium,
+            12 => ColorSchemeId::Ibm5153,
+            13 => ColorSchemeId::OneHalfDark,
+            14 => ColorSchemeId::OneHalfLight,
+            15 => ColorSchemeId::Ottosson,
+            16 => ColorSchemeId::SolarizedDark,
+            17 => ColorSchemeId::SolarizedLight,
+            18 => ColorSchemeId::TangoDark,
+            19 => ColorSchemeId::TangoLight,
+            20 => ColorSchemeId::Vintage,
+            21 => ColorSchemeId::VscodeDarkModern,
+            22 => ColorSchemeId::VscodeLightModern,
             _ => ColorSchemeId::Default,
         }
     }
@@ -162,6 +242,22 @@ impl ColorScheme {
             ColorSchemeId::MidnightCommander => Self::midnight_commander(),
             ColorSchemeId::BlackOnWhite => Self::black_on_white(),
             ColorSchemeId::DarkVivid => Self::dark_vivid(),
+            ColorSchemeId::Cga => Self::cga(),
+            ColorSchemeId::Campbell => Self::campbell(),
+            ColorSchemeId::CampbellPowershell => Self::campbell_powershell(),
+            ColorSchemeId::DarkPlus => Self::dark_plus(),
+            ColorSchemeId::Dimidium => Self::dimidium(),
+            ColorSchemeId::Ibm5153 => Self::ibm_5153(),
+            ColorSchemeId::OneHalfDark => Self::one_half_dark(),
+            ColorSchemeId::OneHalfLight => Self::one_half_light(),
+            ColorSchemeId::Ottosson => Self::ottosson(),
+            ColorSchemeId::SolarizedDark => Self::solarized_dark(),
+            ColorSchemeId::SolarizedLight => Self::solarized_light(),
+            ColorSchemeId::TangoDark => Self::tango_dark(),
+            ColorSchemeId::TangoLight => Self::tango_light(),
+            ColorSchemeId::Vintage => Self::vintage(),
+            ColorSchemeId::VscodeDarkModern => Self::vscode_dark_modern(),
+            ColorSchemeId::VscodeLightModern => Self::vscode_light_modern(),
         }
     }
 
@@ -725,6 +821,258 @@ impl ColorScheme {
         }
     }
 
+    // ── Windows Terminal palette import ─────────────────────────────────
+    //
+    // Windows Terminal color schemes are defined as a 16 color ANSI palette
+    // plus separate foreground/background colors. We map that onto our
+    // roughly 60 color slots using a fixed semantic rule: green = normal/ok,
+    // red = system/high, yellow = medium, cyan = accent/chrome, blue =
+    // selection background. Note that in Windows Terminal JSON the "purple"
+    // field is what we call magenta everywhere else in this file.
+
+    /// Parse a "#RRGGBB" hex string into a `Color::Rgb`.
+    fn hex(s: &str) -> Color {
+        let s = s.trim_start_matches('#');
+        let r = u8::from_str_radix(&s[0..2], 16).unwrap();
+        let g = u8::from_str_radix(&s[2..4], 16).unwrap();
+        let b = u8::from_str_radix(&s[4..6], 16).unwrap();
+        Color::Rgb(r, g, b)
+    }
+
+    /// Build a full ColorScheme from a Windows Terminal 16 color palette.
+    /// The parameter order mirrors the scheme layout in Windows Terminal JSON.
+    #[allow(clippy::too_many_arguments)]
+    fn from_wt(
+        bg: &str,
+        fg: &str,
+        black: &str,
+        red: &str,
+        green: &str,
+        yellow: &str,
+        blue: &str,
+        purple: &str,
+        cyan: &str,
+        bright_black: &str,
+        bright_white: &str,
+    ) -> Self {
+        let bg = Self::hex(bg);
+        let fg = Self::hex(fg);
+        let black = Self::hex(black);
+        let red = Self::hex(red);
+        let green = Self::hex(green);
+        let yellow = Self::hex(yellow);
+        let blue = Self::hex(blue);
+        let purple = Self::hex(purple);
+        let cyan = Self::hex(cyan);
+        let bright_black = Self::hex(bright_black);
+        let bright_white = Self::hex(bright_white);
+
+        Self {
+            bg,
+
+            cpu_bar_normal: green,
+            cpu_bar_system: red,
+            cpu_bar_low: blue,
+            cpu_bar_virt: cyan,
+            cpu_bar_iowait: bright_black,
+            cpu_bar_irq: yellow,
+            cpu_bar_softirq: purple,
+            cpu_label: fg,
+            cpu_bar_bg: bright_black,
+
+            mem_bar_used: green,
+            mem_bar_buffers: blue,
+            mem_bar_cache: yellow,
+
+            swap_bar: red,
+
+            tasks_text: fg,
+            load_text: fg,
+            uptime_text: fg,
+            info_label: fg,
+            info_value: cyan,
+
+            table_header_bg: cyan,
+            table_header_fg: black,
+            table_header_sort_bg: green,
+            table_header_sort_fg: black,
+
+            process_fg: fg,
+            process_bg: bg,
+            process_selected_bg: blue,
+            process_selected_fg: bright_white,
+            process_shadow: bright_black,
+
+            col_pid: green,
+            col_user: fg,
+            col_priority: fg,
+            col_mem_high: green,
+            col_mem_normal: fg,
+            col_cpu_high: red,
+            col_cpu_medium: yellow,
+            col_cpu_low: green,
+            col_status_running: green,
+            col_status_sleeping: fg,
+            col_status_disk_sleep: red,
+            col_status_stopped: red,
+            col_status_zombie: purple,
+            col_status_unknown: bright_black,
+            col_command: fg,
+            col_command_basename: green,
+            col_thread: blue,
+
+            footer_key_fg: fg,
+            footer_key_bg: bg,
+            footer_label_fg: black,
+            footer_label_bg: cyan,
+
+            tab_active_bg: cyan,
+            tab_active_fg: black,
+            tab_inactive_fg: bright_black,
+            tab_inactive_bg: bg,
+
+            popup_border: cyan,
+            popup_bg: bg,
+            popup_title: cyan,
+            popup_selected_bg: cyan,
+            popup_selected_fg: black,
+            popup_text: fg,
+
+            search_label: cyan,
+            search_text: fg,
+            filter_label: yellow,
+            filter_text: fg,
+        }
+    }
+
+    /// Windows Terminal CGA
+    fn cga() -> Self {
+        Self::from_wt(
+            "#000000", "#AAAAAA", "#000000", "#AA0000", "#00AA00", "#AA5500", "#0000AA",
+            "#AA00AA", "#00AAAA", "#555555", "#FFFFFF",
+        )
+    }
+
+    /// Windows Terminal Campbell (default dark scheme)
+    fn campbell() -> Self {
+        Self::from_wt(
+            "#0C0C0C", "#CCCCCC", "#0C0C0C", "#C50F1F", "#13A10E", "#C19C00", "#0037DA",
+            "#881798", "#3A96DD", "#767676", "#F2F2F2",
+        )
+    }
+
+    /// Windows Terminal Campbell PowerShell
+    fn campbell_powershell() -> Self {
+        Self::from_wt(
+            "#012456", "#CCCCCC", "#0C0C0C", "#C50F1F", "#13A10E", "#C19C00", "#0037DA",
+            "#881798", "#3A96DD", "#767676", "#F2F2F2",
+        )
+    }
+
+    /// Windows Terminal Dark+
+    fn dark_plus() -> Self {
+        Self::from_wt(
+            "#1E1E1E", "#CCCCCC", "#000000", "#CD3131", "#0DBC79", "#E5E510", "#2472C8",
+            "#BC3FBC", "#11A8CD", "#666666", "#E5E5E5",
+        )
+    }
+
+    /// Windows Terminal Dimidium
+    fn dimidium() -> Self {
+        Self::from_wt(
+            "#141414", "#BAB7B6", "#000000", "#CF494C", "#60B442", "#DB9C11", "#0575D8",
+            "#AF5ED2", "#1DB6BB", "#817E7E", "#DEE3E4",
+        )
+    }
+
+    /// Windows Terminal IBM 5153
+    fn ibm_5153() -> Self {
+        Self::from_wt(
+            "#000000", "#AAAAAA", "#000000", "#AA0000", "#00AA00", "#C47E00", "#0000AA",
+            "#AA00AA", "#00AAAA", "#555555", "#FFFFFF",
+        )
+    }
+
+    /// Windows Terminal One Half Dark
+    fn one_half_dark() -> Self {
+        Self::from_wt(
+            "#282C34", "#DCDFE4", "#282C34", "#E06C75", "#98C379", "#E5C07B", "#61AFEF",
+            "#C678DD", "#56B6C2", "#5A6374", "#DCDFE4",
+        )
+    }
+
+    /// Windows Terminal One Half Light
+    fn one_half_light() -> Self {
+        Self::from_wt(
+            "#FAFAFA", "#383A42", "#383A42", "#E45649", "#50A14F", "#C18301", "#0184BC",
+            "#A626A4", "#0997B3", "#4F525D", "#FFFFFF",
+        )
+    }
+
+    /// Windows Terminal Ottosson
+    fn ottosson() -> Self {
+        Self::from_wt(
+            "#000000", "#BEBEBE", "#000000", "#BE2C21", "#3FAE3A", "#BE9A4A", "#204DBE",
+            "#BB54BE", "#00A7B2", "#808080", "#FFFFFF",
+        )
+    }
+
+    /// Windows Terminal Solarized Dark
+    fn solarized_dark() -> Self {
+        Self::from_wt(
+            "#002B36", "#839496", "#002B36", "#DC322F", "#859900", "#B58900", "#268BD2",
+            "#D33682", "#2AA198", "#073642", "#FDF6E3",
+        )
+    }
+
+    /// Windows Terminal Solarized Light
+    fn solarized_light() -> Self {
+        Self::from_wt(
+            "#FDF6E3", "#657B83", "#002B36", "#DC322F", "#859900", "#B58900", "#268BD2",
+            "#D33682", "#2AA198", "#073642", "#FDF6E3",
+        )
+    }
+
+    /// Windows Terminal Tango Dark
+    fn tango_dark() -> Self {
+        Self::from_wt(
+            "#000000", "#D3D7CF", "#000000", "#CC0000", "#4E9A06", "#C4A000", "#3465A4",
+            "#75507B", "#06989A", "#555753", "#EEEEEC",
+        )
+    }
+
+    /// Windows Terminal Tango Light
+    fn tango_light() -> Self {
+        Self::from_wt(
+            "#FFFFFF", "#555753", "#000000", "#CC0000", "#4E9A06", "#C4A000", "#3465A4",
+            "#75507B", "#06989A", "#555753", "#EEEEEC",
+        )
+    }
+
+    /// Windows Terminal Vintage
+    fn vintage() -> Self {
+        Self::from_wt(
+            "#000000", "#C0C0C0", "#000000", "#800000", "#008000", "#808000", "#000080",
+            "#800080", "#008080", "#808080", "#FFFFFF",
+        )
+    }
+
+    /// Windows Terminal VSCode Dark Modern
+    fn vscode_dark_modern() -> Self {
+        Self::from_wt(
+            "#1F1F1F", "#CCCCCC", "#000000", "#CD3131", "#0DBC79", "#E5E510", "#2472C8",
+            "#BC3FBC", "#11A8CD", "#666666", "#E5E5E5",
+        )
+    }
+
+    /// Windows Terminal VSCode Light Modern
+    fn vscode_light_modern() -> Self {
+        Self::from_wt(
+            "#FFFFFF", "#3B3B3B", "#000000", "#CD3131", "#00BC00", "#949800", "#0451A5",
+            "#BC05BC", "#0598BC", "#666666", "#A5A5A5",
+        )
+    }
+
     // ── Convenience style builders ──────────────────────────────────────
 
     pub fn header_normal_style(&self) -> Style {
@@ -760,5 +1108,61 @@ impl ColorScheme {
 
     pub fn footer_label_style(&self) -> Style {
         Style::default().fg(self.footer_label_fg).bg(self.footer_label_bg)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_contains_23_schemes() {
+        assert_eq!(ColorSchemeId::all().len(), 23);
+    }
+
+    #[test]
+    fn from_index_round_trips_for_every_scheme() {
+        for i in 0..ColorSchemeId::all().len() {
+            assert_eq!(ColorSchemeId::from_index(i) as usize, i, "index {} does not round trip", i);
+        }
+    }
+
+    #[test]
+    fn from_index_out_of_range_falls_back_to_default() {
+        assert_eq!(ColorSchemeId::from_index(999), ColorSchemeId::Default);
+        assert_eq!(ColorSchemeId::from_index(23), ColorSchemeId::Default);
+    }
+
+    #[test]
+    fn every_scheme_builds_with_nonempty_name_and_description() {
+        for id in ColorSchemeId::all() {
+            let _scheme = ColorScheme::from_id(*id);
+            assert!(!id.name().is_empty());
+            assert!(!id.description().is_empty());
+        }
+    }
+
+    #[test]
+    fn scheme_names_are_unique() {
+        let mut names: Vec<&str> = ColorSchemeId::all().iter().map(|id| id.name()).collect();
+        let total = names.len();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), total);
+    }
+
+    #[test]
+    fn windows_terminal_schemes_use_exact_palette_backgrounds() {
+        let cases = [
+            (ColorSchemeId::Campbell, Color::Rgb(0x0C, 0x0C, 0x0C)),
+            (ColorSchemeId::CampbellPowershell, Color::Rgb(0x01, 0x24, 0x56)),
+            (ColorSchemeId::SolarizedDark, Color::Rgb(0x00, 0x2B, 0x36)),
+            (ColorSchemeId::SolarizedLight, Color::Rgb(0xFD, 0xF6, 0xE3)),
+            (ColorSchemeId::OneHalfDark, Color::Rgb(0x28, 0x2C, 0x34)),
+            (ColorSchemeId::VscodeDarkModern, Color::Rgb(0x1F, 0x1F, 0x1F)),
+        ];
+        for (id, expected_bg) in cases {
+            assert_eq!(ColorScheme::from_id(id).bg, expected_bg, "wrong bg for {}", id.name());
+        }
     }
 }
