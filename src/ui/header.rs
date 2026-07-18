@@ -257,6 +257,7 @@ fn draw_meter(f: &mut Frame, app: &App, name: &str, area: Rect) {
         }
         "GPU" => draw_gpu_bar(f, app, area),
         "VMem" => draw_vram_bar(f, app, area),
+        "Total CPU" => draw_total_cpu_line(f, app, area),
         "Tasks" => draw_tasks_line(f, app, area),
         "Load average" => draw_load_line(f, app, area),
         "Uptime" => draw_uptime_line(f, app, area),
@@ -549,6 +550,19 @@ fn format_rate(bytes_per_sec: f64) -> String {
     } else {
         format!("{:.0} B/s", bytes_per_sec)
     }
+}
+
+/// Draw: "Total CPU: 4.2%" (aggregate utilization across all logical cores,
+/// matching the single percentage Windows Task Manager reports)
+fn draw_total_cpu_line(f: &mut Frame, app: &App, area: Rect) {
+    let cs = &app.color_scheme;
+    let usage = app.cpu_info.total_usage;
+    let value_color = if usage > 80.0 { cs.col_cpu_high } else { cs.info_value };
+    let line = Line::from(vec![
+        Span::styled("Total CPU: ", Style::default().fg(cs.info_label).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{:.1}%", usage), Style::default().fg(value_color).add_modifier(Modifier::BOLD)),
+    ]);
+    f.render_widget(Paragraph::new(line), area);
 }
 
 /// Draw: "Tasks: 312, 1024 thr; 5 running"

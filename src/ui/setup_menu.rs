@@ -129,6 +129,7 @@ pub const AVAILABLE_METERS: &[&str] = &[
     "AllCPUs4",
     "AllCPUs8",
     "CPU average",
+    "Total CPU",
     "Memory",
     "Swap",
     "Network",

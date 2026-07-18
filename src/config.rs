@@ -84,6 +84,7 @@ impl Default for PstopConfig {
             ],
             right_meters: vec![
                 "AllCPUs".to_string(),
+                "Total CPU".to_string(),
                 "Tasks".to_string(),
                 "Load average".to_string(),
                 "Uptime".to_string(),
@@ -184,6 +185,13 @@ impl PstopConfig {
                     _ => {} // Ignore unknown keys
                 }
             }
+        }
+
+        // Migrate configs saved before the Total CPU meter existed: users who
+        // never customized their meters should pick up the new default row.
+        let pre_total_cpu_default = ["AllCPUs", "Tasks", "Load average", "Uptime"];
+        if cfg.right_meters == pre_total_cpu_default {
+            cfg.right_meters.insert(1, "Total CPU".to_string());
         }
 
         cfg

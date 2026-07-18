@@ -298,6 +298,7 @@ impl App {
             ],
             right_meters: vec![
                 "AllCPUs".to_string(),
+                "Total CPU".to_string(),
                 "Tasks".to_string(),
                 "Load average".to_string(),
                 "Uptime".to_string(),
