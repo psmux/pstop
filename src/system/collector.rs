@@ -272,8 +272,11 @@ impl Collector {
             app.sort_net_processes();
         }
 
-        // ── GPU per-process data (GPU tab) ──
-        if matches!(app.active_tab, crate::app::ProcessTab::Gpu) {
+        // ── GPU data (GPU tab, or GPU/VMem header meters on any tab) ──
+        // The PDH query is only sampled when something on screen actually needs
+        // it: the GPU tab itself, or a "GPU"/"VMem" meter placed in the header
+        // (issue #12: those meters used to freeze at 0% outside the GPU tab).
+        if app.needs_gpu_data() {
             let mut gpu_procs = self.gpu_collector.collect();
             // Populate process names from sysinfo process list
             for gp in &mut gpu_procs {
@@ -290,9 +293,6 @@ impl Collector {
             app.gpu_overall_usage = info.overall_usage;
             app.gpu_dedicated_mem = info.total_dedicated_mem;
             app.gpu_shared_mem = info.total_shared_mem;
-            if app.gpu_adapter_name.is_empty() {
-                app.gpu_adapter_name = crate::system::gpu::detect_gpu_adapter_name();
-            }
         }
 
         app.follow_process();
@@ -637,5 +637,53 @@ impl Collector {
         app.load_avg_1 = self.load_samples_1;
         app.load_avg_5 = self.load_samples_5;
         app.load_avg_15 = self.load_samples_15;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::ProcessTab;
+
+    /// Issue #12: GPU/VMem header meters must keep updating on the Main tab.
+    /// Requires a WDDM 2.0+ GPU on the test machine; skipped (passes) if the
+    /// GPU tab itself also reports nothing, since then there is nothing to compare.
+    #[test]
+    fn gpu_meters_update_outside_gpu_tab() {
+        let mut collector = Collector::new();
+
+        // Baseline: what does the GPU tab see?
+        let mut on_gpu_tab = App::new();
+        on_gpu_tab.active_tab = ProcessTab::Gpu;
+        for _ in 0..3 {
+            collector.refresh(&mut on_gpu_tab);
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        if on_gpu_tab.gpu_dedicated_mem == 0 && on_gpu_tab.gpu_processes.is_empty() {
+            eprintln!("no GPU counters on this machine; skipping");
+            return;
+        }
+
+        // Main tab with a VMem meter configured in the header
+        let mut collector = Collector::new();
+        let mut on_main = App::new();
+        on_main.active_tab = ProcessTab::Main;
+        on_main.left_meters = vec!["Memory".into(), "GPU".into(), "VMem".into()];
+        assert!(on_main.needs_gpu_data());
+        for _ in 0..3 {
+            collector.refresh(&mut on_main);
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        assert!(
+            on_main.gpu_dedicated_mem > 0 || !on_main.gpu_processes.is_empty(),
+            "GPU data was not collected on the Main tab even though GPU/VMem meters are configured"
+        );
+
+        // And without any GPU meter, Main tab must not touch the GPU counters
+        let mut plain = App::new();
+        plain.active_tab = ProcessTab::Main;
+        plain.left_meters = vec!["Memory".into(), "Swap".into()];
+        plain.right_meters = vec!["Tasks".into()];
+        assert!(!plain.needs_gpu_data());
     }
 }

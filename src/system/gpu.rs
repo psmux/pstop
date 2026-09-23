@@ -9,7 +9,6 @@
 
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::os::windows::process::CommandExt;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -384,31 +383,4 @@ unsafe fn read_wide_ptr(ptr: *mut u16) -> String {
         len += 1;
     }
     String::from_utf16_lossy(std::slice::from_raw_parts(ptr, len))
-}
-
-/// Detect GPU adapter name via DXGI (best-effort, returns first adapter name)
-pub fn detect_gpu_adapter_name() -> String {
-    // Use WMI via command line as a simple fallback
-    // DXGI COM initialization adds complexity — use simple Win32 registry approach
-    use std::process::Command;
-    let output = Command::new("wmic")
-        .args(["path", "Win32_VideoController", "get", "Name", "/format:list"])
-        .creation_flags(0x08000000) // CREATE_NO_WINDOW
-        .output();
-    match output {
-        Ok(o) => {
-            let text = String::from_utf8_lossy(&o.stdout);
-            for line in text.lines() {
-                let line = line.trim();
-                if let Some(name) = line.strip_prefix("Name=") {
-                    let name = name.trim();
-                    if !name.is_empty() {
-                        return name.to_string();
-                    }
-                }
-            }
-            "Unknown GPU".to_string()
-        }
-        Err(_) => "Unknown GPU".to_string(),
-    }
 }

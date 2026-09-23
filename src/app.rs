@@ -57,7 +57,6 @@ pub struct App {
 
     // GPU per-process data (GPU tab)
     pub gpu_processes: Vec<GpuProcessInfo>,
-    pub gpu_adapter_name: String,
     pub gpu_overall_usage: f64,
     pub gpu_dedicated_mem: u64,     // Total dedicated GPU memory in use
     pub gpu_shared_mem: u64,        // Total shared GPU memory in use
@@ -211,7 +210,6 @@ impl App {
             net_scroll_offset: 0,
 
             gpu_processes: Vec::new(),
-            gpu_adapter_name: String::new(),
             gpu_overall_usage: 0.0,
             gpu_dedicated_mem: 0,
             gpu_shared_mem: 0,
@@ -704,6 +702,18 @@ impl App {
             ProcessTab::Net => &mut self.net_scroll_offset,
             ProcessTab::Gpu => &mut self.gpu_scroll_offset,
         }
+    }
+
+    /// Whether GPU counters need to be sampled this tick.
+    /// True on the GPU tab, and on any tab when a "GPU" or "VMem" meter is
+    /// part of the configured header (issue #12).
+    pub fn needs_gpu_data(&self) -> bool {
+        if self.active_tab == ProcessTab::Gpu {
+            return true;
+        }
+        self.left_meters.iter()
+            .chain(self.right_meters.iter())
+            .any(|m| m == "GPU" || m == "VMem")
     }
 
     /// Get the currently selected process
