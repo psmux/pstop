@@ -5,6 +5,7 @@ use sysinfo::{System, ProcessStatus as SysProcessStatus, ProcessesToUpdate, Proc
 use crate::app::App;
 use crate::system::cpu::{CpuCore, CpuInfo};
 use crate::system::gpu::GpuCollector;
+use crate::system::wsl::WslCollector;
 use crate::system::memory::MemoryInfo;
 use crate::system::network::NetworkInfo;
 use crate::system::process::{ProcessInfo, ProcessStatus};
@@ -52,6 +53,8 @@ pub struct Collector {
     pub cpu_kernel_frac: f64,
     /// GPU collector (persistent PDH query)
     gpu_collector: GpuCollector,
+    /// WSL collector (background wsl.exe sampler, only active on the WSL tab)
+    wsl_collector: WslCollector,
 }
 
 impl Collector {
@@ -93,6 +96,7 @@ impl Collector {
             cpu_user_frac: 0.7,
             cpu_kernel_frac: 0.3,
             gpu_collector: GpuCollector::new(),
+            wsl_collector: WslCollector::new(),
         }
     }
 
@@ -293,6 +297,19 @@ impl Collector {
             app.gpu_overall_usage = info.overall_usage;
             app.gpu_dedicated_mem = info.total_dedicated_mem;
             app.gpu_shared_mem = info.total_shared_mem;
+        }
+
+        // ── WSL processes (WSL tab) ──
+        // The sampler thread only runs while the tab is visible; here we just
+        // publish its latest snapshot into the app state.
+        let on_wsl_tab = matches!(app.active_tab, crate::app::ProcessTab::Wsl);
+        self.wsl_collector.set_active(on_wsl_tab);
+        if on_wsl_tab {
+            let snap = self.wsl_collector.snapshot();
+            app.wsl_status = snap.status;
+            app.wsl_distros = snap.distros;
+            app.wsl_processes = snap.processes;
+            app.sort_wsl_processes();
         }
 
         app.follow_process();

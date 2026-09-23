@@ -126,8 +126,8 @@ Real-time CPU usage bars for every logical core, color-coded by usage type (user
 - **Mem** bar: shows used (green), buffers (blue), cached (yellow)
 - **Swap** bar: swap usage with color threshold
 - **Net** bar: live RX/TX throughput in the header
-- **GPU** bar: overall GPU utilization percentage (shown on GPU tab)
-- **VMem** bar: dedicated video memory usage (shown on GPU tab)
+- **GPU** bar: overall GPU utilization percentage (shown on GPU tab, or on any tab when added via F2)
+- **VMem** bar: dedicated video memory usage (shown on GPU tab, or on any tab when added via F2)
 
 ### 🌳 Tree View
 Press `F5` or `t` to toggle process tree view — see parent-child relationships with `├─` / `└─` tree connectors, collapsible nodes with `+`/`-`.
@@ -136,11 +136,12 @@ Press `F5` or `t` to toggle process tree view — see parent-child relationships
 - **F3** - Incremental search: jumps to matching process
 - **F4** - Filter: hides all non-matching processes in real-time
 
-### 📋 Four Tab Views
+### 📋 Five Tab Views
 - **Main** - Full process table (PID, USER, CPU%, MEM%, TIME+, Command...)
 - **I/O** - Disk read/write rates per process
 - **Net** - Per-process network bandwidth (live download/upload rates with auto-scaling B/s, KB/s, MB/s, GB/s) plus active connection counts. No admin required.
 - **GPU** - Per-process GPU engine utilization and dedicated/shared video memory usage via PDH performance counters
+- **WSL** - Linux processes inside every running WSL/WSL2 distribution: distro, PID, user, state, CPU%, MEM%, RES, threads, TIME+ and full command line. Sampled on a background thread by reading `/proc` inside the distro (works with Ubuntu, Debian, Fedora, Alpine, Docker Desktop, ...). `F9` sends the chosen Linux signal to the selected process.
 
 ### ⚙️ F2 Setup Menu (Full htop Parity)
 Press `F2` to open the setup menu with 4 categories:
@@ -214,7 +215,7 @@ All settings auto-save to `%APPDATA%/pstop/pstoprc` and restore on next launch. 
 | `F7` / `F8` | Decrease / Increase process priority (nice) |
 | `F9` / `k` | Kill process |
 | `F10` / `q` | Quit |
-| `Tab` | Switch between Main / I/O / Net / GPU views |
+| `Tab` | Switch between Main / I/O / Net / GPU / WSL views |
 | `Space` | Tag process |
 | `c` | Tag process and children |
 | `U` | Untag all |
@@ -225,7 +226,7 @@ All settings auto-save to `%APPDATA%/pstop/pstoprc` and restore on next launch. 
 | `+` / `-` | Expand / collapse tree node |
 | `e` | Show process environment |
 | `l` | List open handles (lsof equivalent) |
-| `a` | Set CPU affinity |
+| `a` | Set CPU affinity (arrow keys/hjkl move, `Space` toggles, `a` all, `i` invert, mouse click toggles) |
 | `I` | Invert sort order |
 | Arrow keys | Navigate |
 | `PgUp` / `PgDn` | Page through process list |

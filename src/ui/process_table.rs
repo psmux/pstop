@@ -66,6 +66,20 @@ pub const GPU_HEADERS: &[(&str, u16, ProcessSortField, u8)] = &[
     ("Total",      0,  ProcessSortField::VirtMem,     60),
 ];
 
+/// WSL tab column headers (Linux processes inside running WSL distributions)
+pub const WSL_HEADERS: &[(&str, u16, ProcessSortField, u8)] = &[
+    ("Distro",    13,  ProcessSortField::Priority,    75),
+    ("PID",        7,  ProcessSortField::Pid,         90),
+    ("USER",       9,  ProcessSortField::User,        80),
+    ("S",          2,  ProcessSortField::Status,      45),
+    ("CPU%",       6,  ProcessSortField::Cpu,         95),
+    ("MEM%",       6,  ProcessSortField::Mem,         85),
+    ("RES",        7,  ProcessSortField::ResMem,      55),
+    ("THR",        4,  ProcessSortField::Threads,     25),
+    ("TIME+",     10,  ProcessSortField::Time,        50),
+    ("Command",    0,  ProcessSortField::Command,    100),
+];
+
 /// Draw the process table
 pub fn draw_process_table(f: &mut Frame, app: &App, area: Rect) {
     if area.height < 2 {
@@ -78,6 +92,7 @@ pub fn draw_process_table(f: &mut Frame, app: &App, area: Rect) {
         ProcessTab::Io => IO_HEADERS,
         ProcessTab::Net => NET_HEADERS,
         ProcessTab::Gpu => GPU_HEADERS,
+        ProcessTab::Wsl => WSL_HEADERS,
     };
 
     // --- Column header row (full-width colored background like htop) ---
@@ -267,6 +282,43 @@ pub fn draw_process_table(f: &mut Frame, app: &App, area: Rect) {
                     Style::default().fg(Color::DarkGray),
                 ));
                 f.render_widget(Paragraph::new(msg), msg_area);
+            }
+        }
+
+        ProcessTab::Wsl => {
+            let start = app.wsl_scroll_offset;
+            let end = (start + visible).min(app.wsl_processes.len());
+
+            for (i, row_idx) in (start..end).enumerate() {
+                let wp = &app.wsl_processes[row_idx];
+                let is_selected = row_idx == app.wsl_selected_index;
+
+                let row_area = Rect {
+                    x: proc_area.x,
+                    y: proc_area.y + i as u16,
+                    width: proc_area.width,
+                    height: 1,
+                };
+
+                let row_line = build_wsl_row(wp, row_area.width as usize, app, is_selected, &display_cols);
+                f.render_widget(Paragraph::new(row_line), row_area);
+            }
+
+            if app.wsl_processes.is_empty() {
+                use crate::system::wsl::WslStatus;
+                let msg = match &app.wsl_status {
+                    WslStatus::Pending => "  Querying WSL distributions...".to_string(),
+                    WslStatus::NoRunningDistros => {
+                        "  No running WSL distributions (start one with `wsl -d <name>` and it will appear here)".to_string()
+                    }
+                    WslStatus::Unavailable(m) => format!("  WSL is not available: {}", m),
+                    WslStatus::Ok => "  No processes reported by the running WSL distributions".to_string(),
+                };
+                let msg_area = Rect { x: proc_area.x, y: proc_area.y, width: proc_area.width, height: 1 };
+                f.render_widget(
+                    Paragraph::new(Line::from(Span::styled(msg, Style::default().fg(Color::DarkGray)))),
+                    msg_area,
+                );
             }
         }
     }
@@ -657,6 +709,75 @@ fn build_gpu_row(
     Line::from(spans)
 }
 
+/// Build one row of the WSL tab.
+fn build_wsl_row(
+    wp: &crate::system::wsl::WslProcessInfo,
+    width: usize,
+    app: &App,
+    selected: bool,
+    display_cols: &std::collections::HashSet<ProcessSortField>,
+) -> Line<'static> {
+    let cs = &app.color_scheme;
+    let bg = if selected { cs.process_selected_bg } else { cs.process_bg };
+    let base = Style::default().bg(bg);
+
+    let cpu_fg = if wp.cpu_usage > 80.0 { cs.col_cpu_high }
+        else if wp.cpu_usage > 30.0 { cs.col_cpu_medium }
+        else if wp.cpu_usage > 0.05 { Color::Green }
+        else { Color::DarkGray };
+    let mem_fg = if wp.mem_usage > 20.0 { Color::Red }
+        else if wp.mem_usage > 5.0 { Color::Yellow }
+        else { Color::White };
+    let state_fg = match wp.state {
+        'R' => Color::Green,
+        'D' => Color::Red,
+        'Z' => Color::Magenta,
+        'T' | 't' => Color::Yellow,
+        _ => Color::DarkGray,
+    };
+    let is_kernel = wp.command.starts_with('[');
+    let cmd_fg = if is_kernel { Color::DarkGray } else { cs.col_command_basename };
+
+    let mut spans: Vec<Span> = Vec::new();
+    let mut fixed_w = 0usize;
+    for &(name, w, field, _) in WSL_HEADERS {
+        if !display_cols.contains(&field) {
+            continue;
+        }
+        if w == 0 {
+            break;
+        }
+        fixed_w += w as usize;
+        let w = w as usize;
+        let cell = match name {
+            "Distro" => Span::styled(format!("{:<w$}", truncate_str(&wp.distro, w - 1), w = w), base.fg(Color::Cyan)),
+            "PID"    => Span::styled(format!("{:>w$} ", wp.pid, w = w - 1), base.fg(cs.col_pid)),
+            "USER"   => Span::styled(format!("{:<w$}", truncate_str(&wp.user, w - 1), w = w), base.fg(cs.col_user)),
+            "S"      => Span::styled(format!("{:<w$}", wp.state, w = w), base.fg(state_fg)),
+            "CPU%"   => Span::styled(format!("{:>w$.1} ", wp.cpu_usage, w = w - 1), base.fg(cpu_fg)),
+            "MEM%"   => Span::styled(format!("{:>w$.1} ", wp.mem_usage, w = w - 1), base.fg(mem_fg)),
+            "RES"    => Span::styled(format!("{:>w$} ", format_bytes(wp.resident_mem), w = w - 1), base.fg(cs.col_mem_normal)),
+            "THR"    => Span::styled(format!("{:>w$} ", wp.threads, w = w - 1), base.fg(Color::White)),
+            "TIME+"  => Span::styled(format!("{:>w$} ", crate::system::wsl::format_cpu_time(wp.cpu_time_secs), w = w - 1), base.fg(cs.col_cpu_low)),
+            _ => Span::styled(" ".repeat(w), base),
+        };
+        spans.push(cell);
+    }
+    if display_cols.contains(&ProcessSortField::Command) {
+        let cmd_w = width.saturating_sub(fixed_w);
+        let cmd = if app.show_full_path || is_kernel { wp.command.clone() } else {
+            // Like the Main tab: show the basename of argv[0] plus its arguments
+            let mut parts = wp.command.splitn(2, ' ');
+            let argv0 = parts.next().unwrap_or("");
+            let rest = parts.next().unwrap_or("");
+            let base_name = argv0.rsplit('/').next().unwrap_or(argv0);
+            if rest.is_empty() { base_name.to_string() } else { format!("{} {}", base_name, rest) }
+        };
+        spans.push(Span::styled(format!("{:<w$}", truncate_str(&cmd, cmd_w), w = cmd_w), base.fg(cmd_fg)));
+    }
+    Line::from(spans)
+}
+
 /// Truncate a string to max characters
 fn truncate_str(s: &str, max: usize) -> String {
     if s.chars().count() > max {
@@ -838,4 +959,67 @@ fn build_io_row(
     }
 
     Line::from(spans)
+}
+
+#[cfg(test)]
+mod wsl_tab_tests {
+    use super::*;
+    use crate::system::wsl::{WslProcessInfo, WslStatus};
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    fn render(app: &App, w: u16, h: u16) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+        terminal.draw(|f| crate::ui::draw(f, app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let mut text = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                text.push_str(buf[(x, y)].symbol());
+            }
+            text.push('\n');
+        }
+        text
+    }
+
+    /// Issue #14: the WSL tab renders one row per Linux process with all columns.
+    #[test]
+    fn wsl_tab_renders_rows_and_status() {
+        let mut app = App::new();
+        app.active_tab = ProcessTab::Wsl;
+        app.compact_mode = true; // keep the header small so rows fit in the test terminal
+        app.wsl_status = WslStatus::Ok;
+        app.wsl_distros = vec!["Ubuntu-22.04".into()];
+        app.wsl_processes = vec![
+            WslProcessInfo {
+                distro: "Ubuntu-22.04".into(), pid: 42, ppid: 1, user: "gj".into(), state: 'R',
+                threads: 8, cpu_usage: 150.0, mem_usage: 12.5, resident_mem: 1_024_000_000,
+                virtual_mem: 1_500_000_000, cpu_time_secs: 3661.0, name: "node".into(),
+                command: "/usr/bin/node server.js --port 3000".into(),
+            },
+            WslProcessInfo {
+                distro: "Ubuntu-22.04".into(), pid: 57, ppid: 2, user: "root".into(), state: 'I',
+                threads: 1, cpu_usage: 0.0, mem_usage: 0.0, resident_mem: 0, virtual_mem: 0,
+                cpu_time_secs: 0.0, name: "kworker/u8:1".into(), command: "[kworker/u8:1]".into(),
+            },
+        ];
+        app.sort_wsl_processes();
+        let text = render(&app, 110, 20);
+        println!("{}", text);
+
+        assert!(text.contains(" WSL "), "tab bar should show the WSL tab");
+        assert!(text.contains("Distro"), "column header missing");
+        assert!(text.contains("Ubuntu-22.04"));
+        assert!(text.contains("node server.js --port 3000"), "basename + args expected");
+        assert!(text.contains("150.0"));
+        assert!(text.contains("1:01:01"));
+        assert!(text.contains("[kworker/u8:1]"));
+
+        // Empty states explain themselves.
+        app.wsl_processes.clear();
+        app.wsl_status = WslStatus::Unavailable("wsl.exe did not respond within 10 s".into());
+        assert!(render(&app, 110, 20).contains("WSL is not available: wsl.exe did not respond"));
+        app.wsl_status = WslStatus::NoRunningDistros;
+        assert!(render(&app, 110, 20).contains("No running WSL distributions"));
+    }
 }

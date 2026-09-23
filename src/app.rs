@@ -7,6 +7,7 @@ use crate::system::memory::MemoryInfo;
 use crate::system::netstat::ProcessNetBandwidth;
 use crate::system::network::NetworkInfo;
 use crate::system::process::{ProcessInfo, ProcessSortField};
+use crate::system::wsl::{WslProcessInfo, WslStatus};
 
 /// Which tab is active (htop Tab key switches between these)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,6 +16,7 @@ pub enum ProcessTab {
     Io,    // I/O-focused view
     Net,   // Network connections view (real per-process connections)
     Gpu,   // GPU usage per process (GPU-agnostic via PDH)
+    Wsl,   // Linux processes inside running WSL distributions
 }
 
 /// Which view/mode the app is currently in
@@ -63,6 +65,13 @@ pub struct App {
     pub gpu_selected_index: usize,
     pub gpu_scroll_offset: usize,
 
+    // WSL per-process data (WSL tab)
+    pub wsl_processes: Vec<WslProcessInfo>,
+    pub wsl_status: WslStatus,
+    pub wsl_distros: Vec<String>,
+    pub wsl_selected_index: usize,
+    pub wsl_scroll_offset: usize,
+
     // Process table state
     pub selected_index: usize,
     pub scroll_offset: usize,
@@ -81,6 +90,10 @@ pub struct App {
     // Sorting (GPU tab)
     pub gpu_sort_field: ProcessSortField,
     pub gpu_sort_ascending: bool,
+
+    // Sorting (WSL tab)
+    pub wsl_sort_field: ProcessSortField,
+    pub wsl_sort_ascending: bool,
 
     // Search (F3) — transient, doesn't filter
     pub search_query: String,
@@ -220,6 +233,11 @@ impl App {
             gpu_shared_mem: 0,
             gpu_selected_index: 0,
             gpu_scroll_offset: 0,
+            wsl_processes: Vec::new(),
+            wsl_status: WslStatus::Pending,
+            wsl_distros: Vec::new(),
+            wsl_selected_index: 0,
+            wsl_scroll_offset: 0,
 
             selected_index: 0,
             scroll_offset: 0,
@@ -235,6 +253,8 @@ impl App {
 
             gpu_sort_field: ProcessSortField::Cpu,  // GPU% by default
             gpu_sort_ascending: false,
+            wsl_sort_field: ProcessSortField::Cpu,
+            wsl_sort_ascending: false,
 
             search_query: String::new(),
             search_not_found: false,
@@ -692,6 +712,7 @@ impl App {
             ProcessTab::Main | ProcessTab::Io => self.filtered_processes.len(),
             ProcessTab::Net => self.net_processes.len(),
             ProcessTab::Gpu => self.gpu_processes.len(),
+            ProcessTab::Wsl => self.wsl_processes.len(),
         }
     }
 
@@ -701,6 +722,7 @@ impl App {
             ProcessTab::Main | ProcessTab::Io => &mut self.selected_index,
             ProcessTab::Net => &mut self.net_selected_index,
             ProcessTab::Gpu => &mut self.gpu_selected_index,
+            ProcessTab::Wsl => &mut self.wsl_selected_index,
         }
     }
 
@@ -710,6 +732,7 @@ impl App {
             ProcessTab::Main | ProcessTab::Io => &mut self.scroll_offset,
             ProcessTab::Net => &mut self.net_scroll_offset,
             ProcessTab::Gpu => &mut self.gpu_scroll_offset,
+            ProcessTab::Wsl => &mut self.wsl_scroll_offset,
         }
     }
 
@@ -730,12 +753,18 @@ impl App {
         self.filtered_processes.get(self.selected_index)
     }
 
+    /// Get the currently selected WSL process (WSL tab)
+    pub fn selected_wsl_process(&self) -> Option<&WslProcessInfo> {
+        self.wsl_processes.get(self.wsl_selected_index)
+    }
+
     /// Get the active sort field for the current tab
     pub fn active_sort_field(&self) -> ProcessSortField {
         match self.active_tab {
             ProcessTab::Main | ProcessTab::Io => self.sort_field,
             ProcessTab::Net => self.net_sort_field,
             ProcessTab::Gpu => self.gpu_sort_field,
+            ProcessTab::Wsl => self.wsl_sort_field,
         }
     }
 
@@ -745,6 +774,7 @@ impl App {
             ProcessTab::Main | ProcessTab::Io => self.sort_ascending,
             ProcessTab::Net => self.net_sort_ascending,
             ProcessTab::Gpu => self.gpu_sort_ascending,
+            ProcessTab::Wsl => self.wsl_sort_ascending,
         }
     }
 
@@ -780,6 +810,15 @@ impl App {
                     self.gpu_sort_ascending = false;
                 }
                 self.sort_gpu_processes();
+            }
+            ProcessTab::Wsl => {
+                if self.wsl_sort_field == field {
+                    self.wsl_sort_ascending = !self.wsl_sort_ascending;
+                } else {
+                    self.wsl_sort_field = field;
+                    self.wsl_sort_ascending = false;
+                }
+                self.sort_wsl_processes();
             }
         }
     }
@@ -830,6 +869,34 @@ impl App {
                 // Default: sort by GPU usage
                 _ => a.gpu_usage.partial_cmp(&b.gpu_usage).unwrap_or(std::cmp::Ordering::Equal),
             };
+            if ascending { ord } else { ord.reverse() }
+        });
+    }
+
+    /// Sort WSL tab data by current wsl_sort_field
+    pub fn sort_wsl_processes(&mut self) {
+        let ascending = self.wsl_sort_ascending;
+        let field = self.wsl_sort_field;
+        let f = |x: f32, y: f32| x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal);
+
+        self.wsl_processes.sort_by(|a, b| {
+            let ord = match field {
+                ProcessSortField::Pid => a.pid.cmp(&b.pid),
+                ProcessSortField::Ppid => a.ppid.cmp(&b.ppid),
+                ProcessSortField::Priority => a.distro.cmp(&b.distro).then(a.pid.cmp(&b.pid)),
+                ProcessSortField::User => a.user.cmp(&b.user),
+                ProcessSortField::Status => a.state.cmp(&b.state),
+                ProcessSortField::Cpu => f(a.cpu_usage, b.cpu_usage),
+                ProcessSortField::Mem => f(a.mem_usage, b.mem_usage),
+                ProcessSortField::ResMem => a.resident_mem.cmp(&b.resident_mem),
+                ProcessSortField::VirtMem => a.virtual_mem.cmp(&b.virtual_mem),
+                ProcessSortField::Threads => a.threads.cmp(&b.threads),
+                ProcessSortField::Time => a.cpu_time_secs.partial_cmp(&b.cpu_time_secs).unwrap_or(std::cmp::Ordering::Equal),
+                ProcessSortField::Command => a.command.to_lowercase().cmp(&b.command.to_lowercase()),
+                _ => f(a.cpu_usage, b.cpu_usage),
+            };
+            // Tie-break so rows do not jitter between refreshes
+            let ord = ord.then_with(|| a.distro.cmp(&b.distro)).then_with(|| a.pid.cmp(&b.pid));
             if ascending { ord } else { ord.reverse() }
         });
     }
@@ -920,6 +987,13 @@ impl App {
             self.gpu_scroll_offset = 0;
         } else if self.gpu_selected_index >= self.gpu_processes.len() {
             self.gpu_selected_index = self.gpu_processes.len() - 1;
+        }
+        // Clamp WSL tab selection
+        if self.wsl_processes.is_empty() {
+            self.wsl_selected_index = 0;
+            self.wsl_scroll_offset = 0;
+        } else if self.wsl_selected_index >= self.wsl_processes.len() {
+            self.wsl_selected_index = self.wsl_processes.len() - 1;
         }
     }
 }

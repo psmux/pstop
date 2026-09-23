@@ -3,7 +3,7 @@ use crossterm::event::{MouseEvent, MouseEventKind, MouseButton};
 use crate::app::{App, AppMode, ProcessTab};
 use crate::system::process::ProcessSortField;
 use crate::ui;
-use crate::ui::process_table::{HEADERS, IO_HEADERS, NET_HEADERS, GPU_HEADERS, compute_display_columns};
+use crate::ui::process_table::{HEADERS, IO_HEADERS, NET_HEADERS, GPU_HEADERS, WSL_HEADERS, compute_display_columns};
 
 /// Handle a mouse event.
 /// Requires the terminal size (columns, rows) to compute layout areas.
@@ -77,8 +77,8 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent, term_width: u16, term_heig
 
 // ── Tab bar click ────────────────────────────────────────────────────
 
-/// Tab bar layout: " " (1) + " Main " (6) + " " (1) + " I/O " (5) + " " (1) + " Net " (5) + " " (1) + " GPU " (5)
-/// Main: x in [1..7), I/O: x in [8..13), Net: x in [14..18), GPU: x in [19..23)
+/// Tab bar layout: " " (1) + " Main " (6) + " " (1) + " I/O " (5) + " " (1) + " Net " (5) + " " (1) + " GPU " (5) + " " (1) + " WSL " (5)
+/// Main: x in [1..7), I/O: x in [8..13), Net: x in [14..19), GPU: x in [20..25), WSL: x in [26..31)
 fn handle_tab_bar_click(app: &mut App, x: u16) {
     if (1..7).contains(&x) {
         app.active_tab = ProcessTab::Main;
@@ -88,6 +88,8 @@ fn handle_tab_bar_click(app: &mut App, x: u16) {
         app.active_tab = ProcessTab::Net;
     } else if (20..25).contains(&x) {
         app.active_tab = ProcessTab::Gpu;
+    } else if (26..31).contains(&x) {
+        app.active_tab = ProcessTab::Wsl;
     }
 }
 
@@ -99,6 +101,7 @@ fn handle_header_click(app: &mut App, x: u16, term_width: u16) {
         ProcessTab::Io   => IO_HEADERS,
         ProcessTab::Net  => NET_HEADERS,
         ProcessTab::Gpu  => GPU_HEADERS,
+        ProcessTab::Wsl  => WSL_HEADERS,
     };
 
     // Compute display columns (same logic as rendering, so clicks match)
@@ -156,6 +159,12 @@ fn handle_row_click(app: &mut App, y: u16, data_start_y: u16) {
             let target_index = app.gpu_scroll_offset + row_offset;
             if target_index < app.gpu_processes.len() {
                 app.gpu_selected_index = target_index;
+            }
+        }
+        ProcessTab::Wsl => {
+            let target_index = app.wsl_scroll_offset + row_offset;
+            if target_index < app.wsl_processes.len() {
+                app.wsl_selected_index = target_index;
             }
         }
     }

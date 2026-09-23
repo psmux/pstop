@@ -57,16 +57,18 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                 ProcessTab::Main => ProcessTab::Io,
                 ProcessTab::Io => ProcessTab::Net,
                 ProcessTab::Net => ProcessTab::Gpu,
-                ProcessTab::Gpu => ProcessTab::Main,
+                ProcessTab::Gpu => ProcessTab::Wsl,
+                ProcessTab::Wsl => ProcessTab::Main,
             };
         }
         KeyCode::BackTab => {
             // Shift+Tab goes backwards
             app.active_tab = match app.active_tab {
-                ProcessTab::Main => ProcessTab::Gpu,
+                ProcessTab::Main => ProcessTab::Wsl,
                 ProcessTab::Io => ProcessTab::Main,
                 ProcessTab::Net => ProcessTab::Io,
                 ProcessTab::Gpu => ProcessTab::Net,
+                ProcessTab::Wsl => ProcessTab::Gpu,
             };
         }
 
@@ -129,6 +131,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                 }
                 ProcessTab::Net => { app.net_sort_ascending = !app.net_sort_ascending; app.sort_net_processes(); }
                 ProcessTab::Gpu => { app.gpu_sort_ascending = !app.gpu_sort_ascending; app.sort_gpu_processes(); }
+                ProcessTab::Wsl => { app.wsl_sort_ascending = !app.wsl_sort_ascending; app.sort_wsl_processes(); }
             }
         }
 
@@ -428,6 +431,15 @@ fn handle_kill_mode(app: &mut App, key: KeyEvent) {
             }
         }
         KeyCode::Enter => {
+            // WSL tab: forward the chosen Linux signal into the distribution
+            if app.active_tab == ProcessTab::Wsl {
+                if let Some(p) = app.selected_wsl_process() {
+                    let signal: u32 = KILL_SIGNALS[app.kill_signal_index].0.parse().unwrap_or(15);
+                    crate::system::wsl::kill_wsl_process(p.distro.clone(), p.pid, signal);
+                }
+                app.mode = AppMode::Normal;
+                return;
+            }
             let pids: Vec<u32> = if !app.tagged_pids.is_empty() {
                 app.tagged_pids.iter().copied().collect()
             } else if let Some(proc) = app.selected_process() {
@@ -887,7 +899,7 @@ fn kill_process_with_signal(pid: u32, signal_index: usize) {
 
 /// Cycle through sort fields (tab-aware: uses header fields for current tab)
 fn cycle_sort_field(app: &mut App, forward: bool) {
-    use crate::ui::process_table::{HEADERS, IO_HEADERS, NET_HEADERS, GPU_HEADERS};
+    use crate::ui::process_table::{HEADERS, IO_HEADERS, NET_HEADERS, GPU_HEADERS, WSL_HEADERS};
     use crate::app::ProcessTab;
 
     let headers: &[(&str, u16, ProcessSortField, u8)] = match app.active_tab {
@@ -895,6 +907,7 @@ fn cycle_sort_field(app: &mut App, forward: bool) {
         ProcessTab::Io   => IO_HEADERS,
         ProcessTab::Net  => NET_HEADERS,
         ProcessTab::Gpu  => GPU_HEADERS,
+        ProcessTab::Wsl  => WSL_HEADERS,
     };
     let fields: Vec<ProcessSortField> = headers.iter().map(|(_, _, f, _)| *f).collect();
     let current = app.active_sort_field();

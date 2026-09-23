@@ -30,12 +30,12 @@ pub fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
         .fg(cs.tab_inactive_fg)
         .bg(cs.tab_inactive_bg);
 
-    let (main_style, io_style, net_style, gpu_style) = match app.active_tab {
-        ProcessTab::Main => (active_style, inactive_style, inactive_style, inactive_style),
-        ProcessTab::Io => (inactive_style, active_style, inactive_style, inactive_style),
-        ProcessTab::Net => (inactive_style, inactive_style, active_style, inactive_style),
-        ProcessTab::Gpu => (inactive_style, inactive_style, inactive_style, active_style),
-    };
+    let style_for = |tab: ProcessTab| if app.active_tab == tab { active_style } else { inactive_style };
+    let main_style = style_for(ProcessTab::Main);
+    let io_style = style_for(ProcessTab::Io);
+    let net_style = style_for(ProcessTab::Net);
+    let gpu_style = style_for(ProcessTab::Gpu);
+    let wsl_style = style_for(ProcessTab::Wsl);
 
     let line = Line::from(vec![
         Span::styled(" ", Style::default().bg(cs.tab_inactive_bg)),
@@ -46,6 +46,8 @@ pub fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
         Span::styled(" Net ", net_style),
         Span::styled(" ", separator_style),
         Span::styled(" GPU ", gpu_style),
+        Span::styled(" ", separator_style),
+        Span::styled(" WSL ", wsl_style),
     ]);
 
     f.render_widget(Paragraph::new(line), area);
