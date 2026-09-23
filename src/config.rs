@@ -197,18 +197,8 @@ impl PstopConfig {
         cfg
     }
 
-    /// Save config to file
-    pub fn save(&self) -> Result<(), String> {
-        let path = match config_path() {
-            Some(p) => p,
-            None => return Err("Could not determine config path".into()),
-        };
-
-        // Create parent directory
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| format!("Failed to create config dir: {}", e))?;
-        }
-
+    /// Render config as pstoprc key=value contents.
+    fn serialize(&self) -> String {
         let mut lines = Vec::new();
         lines.push("# pstop configuration file".to_string());
         lines.push(format!("# Auto-generated — do not edit while pstop is running"));
@@ -236,23 +226,41 @@ impl PstopConfig {
         lines.push(format!("color_scheme={}", self.color_scheme_id as usize));
         
         // Sort field index
-        let all_fields = ProcessSortField::all();
-        let sort_idx = all_fields.iter().position(|f| *f == self.sort_field).unwrap_or(0);
+        let sort_idx = self.sort_field.index();
         lines.push(format!("sort_field={}", sort_idx));
         lines.push(format!("sort_ascending={}", b(self.sort_ascending)));
 
         // Visible columns as comma-separated indices
-        let col_indices: Vec<String> = self.visible_columns.iter()
-            .filter_map(|col| all_fields.iter().position(|f| f == col))
-            .map(|i| i.to_string())
+        let mut col_indices: Vec<usize> = self.visible_columns.iter()
+            .map(|col| col.index())
             .collect();
-        lines.push(format!("visible_columns={}", col_indices.join(",")));
+        col_indices.sort_unstable();
+        let serialized_columns = col_indices.iter()
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        lines.push(format!("visible_columns={}", serialized_columns));
 
         // Meters
         lines.push(format!("left_meters={}", self.left_meters.join(";")));
         lines.push(format!("right_meters={}", self.right_meters.join(";")));
 
-        let content = lines.join("\n") + "\n";
+        lines.join("\n") + "\n"
+    }
+
+    /// Save config to file
+    pub fn save(&self) -> Result<(), String> {
+        let path = match config_path() {
+            Some(p) => p,
+            None => return Err("Could not determine config path".into()),
+        };
+
+        // Create parent directory
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("Failed to create config dir: {}", e))?;
+        }
+
+        let content = self.serialize();
         let mut file = fs::File::create(&path)
             .map_err(|e| format!("Failed to create config file: {}", e))?;
         file.write_all(content.as_bytes())
@@ -320,5 +328,30 @@ impl PstopConfig {
         app.visible_columns = self.visible_columns.iter().cloned().collect();
         app.left_meters = self.left_meters.clone();
         app.right_meters = self.right_meters.clone();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn visible_columns_are_serialized_in_canonical_order() {
+        let config = PstopConfig {
+            visible_columns: vec![
+                ProcessSortField::Command,
+                ProcessSortField::Pid,
+                ProcessSortField::Cpu,
+            ],
+            ..PstopConfig::default()
+        };
+
+        let serialized = config.serialize();
+        let visible_columns = serialized
+            .lines()
+            .find(|line| line.starts_with("visible_columns="))
+            .expect("serialized config should contain visible columns");
+
+        assert_eq!(visible_columns, "visible_columns=0,9,16");
     }
 }
