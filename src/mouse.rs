@@ -29,11 +29,33 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent, term_width: u16, term_heig
     let y = mouse.row;
 
     match mouse.kind {
+        // In the affinity popup the wheel moves the CPU cursor, never the
+        // process selection underneath (Enter applies to the selected process).
+        MouseEventKind::ScrollUp if app.mode == AppMode::Affinity => {
+            app.affinity_cursor = app.affinity_cursor.saturating_sub(1);
+        }
+        MouseEventKind::ScrollDown if app.mode == AppMode::Affinity => {
+            let n = app.affinity_cpus.len();
+            if n > 0 {
+                app.affinity_cursor = (app.affinity_cursor + 1).min(n - 1);
+            }
+        }
         MouseEventKind::ScrollUp => app.select_prev(),
         MouseEventKind::ScrollDown => app.select_next(),
 
         MouseEventKind::Down(MouseButton::Left) => {
-            // Only handle clicks in Normal mode (overlays handle their own input)
+            // Affinity popup: clicking a CPU cell toggles it (issue #15)
+            if app.mode == AppMode::Affinity {
+                let term = ratatui::layout::Rect { x: 0, y: 0, width: term_width, height: term_height };
+                let n = app.affinity_cpus.len();
+                let layout = ui::affinity_menu::AffinityLayout::compute(n, term);
+                if let Some(idx) = layout.cpu_at(n, x, y) {
+                    app.affinity_cpus[idx] = !app.affinity_cpus[idx];
+                    app.affinity_cursor = idx;
+                }
+                return;
+            }
+            // Only handle clicks in Normal mode (other overlays handle their own input)
             if app.mode != AppMode::Normal {
                 return;
             }

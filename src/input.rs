@@ -229,10 +229,14 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
                 let cpu_count = winapi::get_cpu_count();
                 let (proc_mask, _sys_mask, success) = winapi::get_process_affinity(proc.pid);
                 if success {
-                    // Initialize affinity_cpus based on current mask
+                    // Initialize affinity_cpus based on current mask.
+                    // A Win32 affinity mask spans one processor group (64 logical
+                    // CPUs), so cap the grid to what the mask can express.
+                    let cpu_count = cpu_count.min(usize::BITS as usize);
                     app.affinity_cpus = (0..cpu_count)
                         .map(|i| (proc_mask & (1 << i)) != 0)
                         .collect();
+                    app.affinity_cursor = 0;
                     app.mode = AppMode::Affinity;
                 }
             }
@@ -480,6 +484,16 @@ fn handle_user_filter_mode(app: &mut App, key: KeyEvent) {
 // ── CPU Affinity mode ───────────────────────────────────────────────────
 
 fn handle_affinity_mode(app: &mut App, key: KeyEvent) {
+    let n = app.affinity_cpus.len();
+    if n == 0 {
+        app.mode = AppMode::Normal;
+        return;
+    }
+    // Grid geometry must match the renderer so Left/Right jump exactly one column.
+    let term = ratatui::layout::Rect { x: 0, y: 0, width: app.term_width, height: app.term_height };
+    let rows = crate::ui::affinity_menu::AffinityLayout::compute(n, term).rows.max(1);
+    let cursor = app.affinity_cursor.min(n - 1);
+
     match key.code {
         KeyCode::Esc => {
             app.mode = AppMode::Normal;
@@ -499,18 +513,31 @@ fn handle_affinity_mode(app: &mut App, key: KeyEvent) {
             }
             app.mode = AppMode::Normal;
         }
+
+        // ── Cursor movement (column-major grid: Up/Down = ±1, Left/Right = ±rows) ──
+        KeyCode::Up | KeyCode::Char('k') => app.affinity_cursor = cursor.saturating_sub(1),
+        KeyCode::Down | KeyCode::Char('j') => app.affinity_cursor = (cursor + 1).min(n - 1),
+        KeyCode::Left | KeyCode::Char('h') | KeyCode::PageUp => {
+            app.affinity_cursor = cursor.saturating_sub(rows);
+        }
+        KeyCode::Right | KeyCode::Char('l') | KeyCode::PageDown => {
+            app.affinity_cursor = (cursor + rows).min(n - 1);
+        }
+        KeyCode::Home => app.affinity_cursor = 0,
+        KeyCode::End => app.affinity_cursor = n - 1,
+
+        // ── Toggling ──
         KeyCode::Char(' ') => {
-            // Space: toggle CPU 0
-            if !app.affinity_cpus.is_empty() {
-                app.affinity_cpus[0] = !app.affinity_cpus[0];
-            }
+            // Space: toggle the highlighted CPU
+            app.affinity_cpus[cursor] = !app.affinity_cpus[cursor];
         }
         KeyCode::Char(c) if c.is_ascii_digit() => {
-            // Number key: toggle specific CPU
+            // Number key: quick toggle for CPUs 0-9 (and move the cursor there)
             if let Some(cpu_idx) = c.to_digit(10) {
                 let idx = cpu_idx as usize;
-                if idx < app.affinity_cpus.len() {
+                if idx < n {
                     app.affinity_cpus[idx] = !app.affinity_cpus[idx];
+                    app.affinity_cursor = idx;
                 }
             }
         }
@@ -519,6 +546,12 @@ fn handle_affinity_mode(app: &mut App, key: KeyEvent) {
             let all_on = app.affinity_cpus.iter().all(|&x| x);
             for cpu in &mut app.affinity_cpus {
                 *cpu = !all_on;
+            }
+        }
+        KeyCode::Char('i') => {
+            // Invert selection
+            for cpu in &mut app.affinity_cpus {
+                *cpu = !*cpu;
             }
         }
         _ => {}
@@ -872,4 +905,59 @@ fn cycle_sort_field(app: &mut App, forward: bool) {
         if current_idx == 0 { fields.len() - 1 } else { current_idx - 1 }
     };
     app.set_sort_field(fields[new_idx]);
+}
+
+#[cfg(test)]
+mod affinity_tests {
+    use super::*;
+    use crate::app::App;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    /// Issue #15: every CPU on a 24-thread machine must be reachable and togglable.
+    #[test]
+    fn cursor_reaches_and_toggles_every_cpu() {
+        let mut app = App::new();
+        app.term_width = 120;
+        app.term_height = 40;
+        app.affinity_cpus = vec![true; 24];
+        app.affinity_cursor = 0;
+        app.mode = AppMode::Affinity;
+
+        // Walk down through all CPUs, toggling each one off.
+        for i in 0..24 {
+            assert_eq!(app.affinity_cursor, i);
+            handle_input(&mut app, key(KeyCode::Char(' ')));
+            assert!(!app.affinity_cpus[i], "CPU {} should be toggled off", i);
+            handle_input(&mut app, key(KeyCode::Down));
+        }
+        // Cursor clamps at the last CPU.
+        assert_eq!(app.affinity_cursor, 23);
+        assert!(app.affinity_cpus.iter().all(|&on| !on));
+
+        // Right/Left jump one grid column (16 rows on a 40-line terminal).
+        handle_input(&mut app, key(KeyCode::Home));
+        handle_input(&mut app, key(KeyCode::Right));
+        assert_eq!(app.affinity_cursor, 16);
+        handle_input(&mut app, key(KeyCode::Left));
+        assert_eq!(app.affinity_cursor, 0);
+        handle_input(&mut app, key(KeyCode::End));
+        assert_eq!(app.affinity_cursor, 23);
+
+        // Digits still toggle CPUs 0-9 directly, 'i' inverts, 'a' toggles all.
+        handle_input(&mut app, key(KeyCode::Char('7')));
+        assert!(app.affinity_cpus[7]);
+        assert_eq!(app.affinity_cursor, 7);
+        handle_input(&mut app, key(KeyCode::Char('i')));
+        assert!(!app.affinity_cpus[7]);
+        assert!(app.affinity_cpus[23]);
+        handle_input(&mut app, key(KeyCode::Char('a')));
+        assert!(app.affinity_cpus.iter().all(|&on| on));
+
+        // Esc leaves the popup without touching any process.
+        handle_input(&mut app, key(KeyCode::Esc));
+        assert_eq!(app.mode, AppMode::Normal);
+    }
 }

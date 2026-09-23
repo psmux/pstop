@@ -242,6 +242,8 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<BufWriter<io::Stdout>>>, com
     loop {
         // Update visible rows based on terminal size
         let size = terminal.size()?;
+        app.term_width = size.width;
+        app.term_height = size.height;
         let header_h = ui::header_height(&app, size.height, size.width) as usize;
         let footer_h = 1;
         let available = size.height as usize;

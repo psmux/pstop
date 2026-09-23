@@ -137,6 +137,11 @@ pub struct App {
 
     // CPU affinity mode
     pub affinity_cpus: Vec<bool>, // CPU selection state (true = enabled)
+    pub affinity_cursor: usize,   // Highlighted CPU in the affinity grid
+
+    // Last known terminal size (updated every frame; used by popups for layout)
+    pub term_width: u16,
+    pub term_height: u16,
 
     // Column visibility (F2 Setup menu)
     pub visible_columns: std::collections::HashSet<ProcessSortField>,
@@ -266,6 +271,10 @@ impl App {
             kill_signal_index: 1, // Default to SIGKILL (force) on Windows
 
             affinity_cpus: Vec::new(),
+            affinity_cursor: 0,
+
+            term_width: 80,
+            term_height: 24,
 
             // Default visible columns (htop default set)
             visible_columns: [
