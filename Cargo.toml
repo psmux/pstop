@@ -10,7 +10,7 @@ documentation = "https://github.com/marlocarlo/pstop#readme"
 readme = "README.md"
 keywords = ["htop", "top", "system-monitor", "process-viewer", "windows"]
 categories = ["command-line-utilities", "os::windows-apis"]
-authors = ["marlocarlo"]
+authors = ["Godwin Sam Josh"]
 exclude = ["target/", "image.png", ".github/"]
 
 [[bin]]
