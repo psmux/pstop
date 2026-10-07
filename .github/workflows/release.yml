@@ -20,6 +20,8 @@ jobs:
   # ── Build release binaries ──────────────────────────────────────────
   build:
     runs-on: windows-latest
+    # Code sign Windows binaries on release tags.
+    environment: ${{ github.ref_type == 'tag' && 'windows-signing' || '' }}
     outputs:
       sha256: ${{ steps.checksum.outputs.sha256 }}
       version: ${{ steps.version.outputs.version }}
@@ -66,6 +68,40 @@ jobs:
           Write-Host "pstop.exe size: $((Get-Item target/release/pstop.exe).Length) bytes"
           Write-Host "htop.exe size: $((Get-Item target/release/htop.exe).Length) bytes"
 
+      # Code sign Windows binaries on release tags.
+      - name: Log in to Certum SimplySign
+        id: certum
+        if: runner.os == 'Windows' && github.ref_type == 'tag'
+        uses: jay0lee/certum-cloud-code-sign@a3324503499c49090869856eeeecfe95fb613d87 # v1, reviewed 2026-10-07
+        with:
+          username: ${{ secrets.CERTUM_USERNAME }}
+          totp_secret: ${{ secrets.CERTUM_TOTP_SECRET }}
+          totp_algorithm: ${{ vars.CERTUM_TOTP_ALGORITHM || 'SHA-256' }}
+
+      # Sign before the archive is made, so the zip, its checksum, and the
+      # Chocolatey and WinGet hashes all describe the signed binaries.
+      - name: Sign binaries
+        if: steps.certum.outcome == 'success'
+        shell: pwsh
+        run: |
+          & "${{ steps.certum.outputs.signtool-path }}" sign /sha1 ${{ steps.certum.outputs.cert-thumbprint }} /tr http://time.certum.pl /td SHA256 /fd SHA256 /d "pstop" target/release/pstop.exe target/release/htop.exe
+          if ($LASTEXITCODE -ne 0) { throw "signtool could not sign the binaries" }
+
+      # A release tag never ships an unsigned build.
+      - name: Verify signatures
+        if: runner.os == 'Windows' && github.ref_type == 'tag'
+        shell: pwsh
+        run: |
+          $signtool = "${{ steps.certum.outputs.signtool-path }}"
+          if (-not $signtool) { Write-Host "::error::signtool was not set up by the Certum login"; exit 1 }
+          $bad = 0
+          foreach ($f in @('target/release/pstop.exe', 'target/release/htop.exe')) {
+            & $signtool verify /pa /q $f
+            if ($LASTEXITCODE -ne 0) { Write-Host "::error::not signed: $f"; $bad = 1 }
+            else { Write-Host "signed: $f" }
+          }
+          if ($bad) { exit 1 }
+
       - name: Create release archive
         shell: pwsh
         run: |
@@ -94,6 +130,10 @@ jobs:
             pstop-windows-x86_64.zip
             pstop-windows-x86_64.zip.sha256
           retention-days: 5
+
+      - name: Log out of Certum SimplySign
+        if: always() && steps.certum.outcome != 'skipped' && steps.certum.outcome != ''
+        uses: jay0lee/certum-cloud-code-sign/teardown@a3324503499c49090869856eeeecfe95fb613d87
 
   # ── Create GitHub Release ───────────────────────────────────────────
   github-release:
