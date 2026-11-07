@@ -401,7 +401,10 @@ jobs:
           Write-Host "wingetcreate update failed — falling back to manual manifest submission..."
 
           $sha256 = "${{ steps.asset.outputs.sha256 }}"
-          $manifestDir = "manifests"
+          # wingetcreate update may already have written manifests\m\... above;
+          # winget validate rejects folders with subfolders, so use a fresh one.
+          $manifestDir = "winget-fallback-manifests"
+          if (Test-Path $manifestDir) { Remove-Item -Recurse -Force $manifestDir }
           New-Item -ItemType Directory -Path $manifestDir -Force
 
           # --- Version manifest ---
