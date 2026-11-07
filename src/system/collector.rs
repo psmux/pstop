@@ -67,7 +67,8 @@ impl Collector {
         // instead of sysinfo's PDH-based approach (~155ms initialization).
         let cpu_monitor = winapi::NativeCpuMonitor::new();
 
-        let sys = System::new();
+        // sysinfo 0.40 made this fallible; it only fails on unsupported OSes.
+        let sys = System::new().expect("sysinfo does not support this system");
         // No refresh_cpu_all needed! CPU monitoring is handled by NativeCpuMonitor.
         // sysinfo is only used for process enumeration + memory.
 
@@ -374,7 +375,10 @@ impl Collector {
     fn collect_network(&mut self, app: &mut App) {
         // Refresh network data (true = reset delta counters)
         // Lazy-init networks on first use
-        let networks = self.networks.get_or_insert_with(Networks::new_with_refreshed_list);
+        if self.networks.is_none() {
+            self.networks = Networks::new_with_refreshed_list().ok();
+        }
+        let Some(networks) = self.networks.as_mut() else { return };
         networks.refresh(true);
 
         let now = std::time::Instant::now();
@@ -633,7 +637,7 @@ impl Collector {
             let now = chrono::Utc::now().timestamp();
             (now - boot_time).max(0) as u64
         } else {
-            System::uptime()
+            System::uptime().unwrap_or(0)
         }
     }
 

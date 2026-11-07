@@ -27,7 +27,7 @@ ratatui = "0.30"
 crossterm = "0.29"
 
 # System information
-sysinfo = "0.38"
+sysinfo = "0.40"
 
 # Windows-specific APIs
 windows = { version = "0.62", features = [

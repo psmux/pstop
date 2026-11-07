@@ -338,7 +338,7 @@ fn run_benchmark() -> Result<()> {
         let boot_handle = std::thread::spawn(|| crate::system::winapi::get_real_boot_time());
         let tc_boot_spawn = tc0.elapsed();
 
-        let mut sys = sysinfo::System::new();
+        let mut sys = sysinfo::System::new().expect("sysinfo does not support this system");
         let tc_sys_new = tc0.elapsed();
 
         sys.refresh_cpu_all();
