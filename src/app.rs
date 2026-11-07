@@ -177,6 +177,7 @@ pub struct App {
     pub header_margin: bool,            // Leave margin around header
     pub detailed_cpu_time: bool,        // Detailed CPU time breakdown
     pub cpu_count_from_zero: bool,      // Number CPUs from 0
+    pub irix_mode: bool,                // Process CPU%: 100% = one core (htop default) vs share of all CPUs
     pub update_process_names: bool,     // Refresh process names each cycle
     pub show_thread_names: bool,        // Show custom thread names
     pub enable_mouse: bool,             // Mouse support on/off
@@ -339,6 +340,7 @@ impl App {
             header_margin: true,
             detailed_cpu_time: false,
             cpu_count_from_zero: false,
+            irix_mode: true,
             update_process_names: false,
             show_thread_names: false,
             enable_mouse: true,

@@ -419,6 +419,12 @@ impl Collector {
         let mut sleeping = 0usize;
         let mut total_threads = 0usize;
         let update_names = app.update_process_names;
+        // Irix mode off (issue #16): show CPU% as a share of the whole machine,
+        // like Task Manager, instead of htop's default where 100% = one core.
+        let ncpu = winapi::get_cpu_count().max(1) as f32;
+        let cpu_divisor = if app.irix_mode { 1.0 } else { ncpu };
+        // A process can never use more than every CPU at once.
+        let cpu_max = 100.0 * ncpu;
 
         // Collect raw process data first (no &mut self needed)
         let raw_procs: Vec<(u32, u32, String, String, SysProcessStatus, u64, u64, f32, f32, u64)> = self.sys.processes()
@@ -471,7 +477,7 @@ impl Collector {
 
                 // Sanitize cpu_usage: sysinfo can return NaN for inaccessible processes
                 let cpu = proc_info.cpu_usage();
-                let cpu_usage = if cpu.is_nan() || cpu.is_infinite() { 0.0 } else { cpu };
+                let cpu_usage = if cpu.is_nan() || cpu.is_infinite() { 0.0 } else { cpu.min(cpu_max) / cpu_divisor };
 
                 (pid.as_u32(), ppid, name, command, proc_info.status(), virt, resident, cpu_usage, mem_pct, proc_info.run_time())
             })
@@ -696,7 +702,88 @@ mod tests {
             "GPU data was not collected on the Main tab even though GPU/VMem meters are configured"
         );
 
-        // And without any GPU meter, Main tab must not touch the GPU counters
+        // And without any GPU meter, Main tab must not touch the GPU counters (see below)
+        assert_no_gpu_meter_default();
+    }
+
+    /// Spin `n` threads until the returned flag is cleared.
+    fn burn_threads(n: usize) -> (std::sync::Arc<std::sync::atomic::AtomicBool>, Vec<std::thread::JoinHandle<()>>) {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let run = std::sync::Arc::new(AtomicBool::new(true));
+        let handles = (0..n)
+            .map(|_| {
+                let run = run.clone();
+                std::thread::spawn(move || {
+                    let mut x: u64 = 0;
+                    while run.load(Ordering::Relaxed) {
+                        x = x.wrapping_mul(6364136223846793005).wrapping_add(1);
+                        std::hint::black_box(x);
+                    }
+                })
+            })
+            .collect();
+        (run, handles)
+    }
+
+    fn own_cpu(collector: &mut Collector, app: &mut App) -> f32 {
+        // sysinfo only stores a process's CPU baseline from its second sample on,
+        // so prime twice before the measured interval.
+        collector.refresh(app);
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        collector.refresh(app);
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        collector.refresh(app);
+        let me = std::process::id();
+        app.processes
+            .iter()
+            .find(|p| p.pid == me)
+            .map(|p| p.cpu_usage)
+            .expect("test process should be in the process list")
+    }
+
+    /// Issue #16: a process that keeps three cores busy (QEMU in the report)
+    /// shows about 300%. That is htop's default "Irix mode": 100% means one
+    /// whole core. With Irix mode off, the value is a share of the whole
+    /// machine like Task Manager, so it can never pass 100%.
+    #[test]
+    fn multi_core_process_cpu_percent_and_irix_mode() {
+        let ncpu = winapi::get_cpu_count();
+        if ncpu < 4 {
+            eprintln!("needs at least 4 logical CPUs, found {}; skipping", ncpu);
+            return;
+        }
+        let (run, handles) = burn_threads(3);
+
+        let mut collector = Collector::new();
+        let mut app = App::new();
+        assert!(app.irix_mode, "Irix mode is on by default, like htop");
+        let irix_on = own_cpu(&mut collector, &mut app);
+
+        let mut collector = Collector::new();
+        let mut app = App::new();
+        app.irix_mode = false;
+        let irix_off = own_cpu(&mut collector, &mut app);
+
+        run.store(false, std::sync::atomic::Ordering::Relaxed);
+        for h in handles {
+            let _ = h.join();
+        }
+
+        eprintln!("ncpu={} irix_on={:.1}% irix_off={:.1}%", ncpu, irix_on, irix_off);
+        // Three busy threads are three cores' worth of time: well above 100%.
+        assert!(irix_on > 200.0, "expected about 300% with Irix mode on, got {:.1}", irix_on);
+        // Divided by the CPU count it is a share of the machine.
+        assert!(irix_off <= 100.0, "Irix mode off must not pass 100%, got {:.1}", irix_off);
+        let expected = 300.0 / ncpu as f32;
+        assert!(
+            irix_off > expected * 0.6 && irix_off < expected * 1.6,
+            "expected about {:.1}% with Irix mode off, got {:.1}",
+            expected,
+            irix_off
+        );
+    }
+
+    fn assert_no_gpu_meter_default() {
         let mut plain = App::new();
         plain.active_tab = ProcessTab::Main;
         plain.left_meters = vec!["Memory".into(), "Swap".into()];

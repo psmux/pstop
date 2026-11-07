@@ -611,7 +611,7 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
                 meter_list.len().saturating_sub(1)
             }
         }
-        1 => 15, // 15 display options + interval row
+        1 => 16, // 16 display options + interval row
         2 => ColorSchemeId::all().len().saturating_sub(1),
         3 => all_fields.len().saturating_sub(1), // All fields, not just visible ones
         4 => 1, // Reset: 0=confirm, 1=cancel
@@ -726,7 +726,7 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
                         }
                     }
                     1 => {
-                        // Display options toggles (14 options + interval)
+                        // Display options toggles (16 options + interval)
                         match app.setup_menu_index {
                             0  => app.show_tree_by_default = !app.show_tree_by_default,
                             1  => app.shadow_other_users = !app.shadow_other_users,
@@ -743,6 +743,7 @@ fn handle_setup_mode(app: &mut App, key: KeyEvent) {
                             12 => app.show_merged_command = !app.show_merged_command,
                             13 => app.enable_mouse = !app.enable_mouse,
                             14 => app.vim_keys = !app.vim_keys,
+                            15 => app.irix_mode = !app.irix_mode,
                             _ => {} // interval row, use +/-
                         }
                     }

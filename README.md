@@ -146,7 +146,7 @@ Press `F5` or `t` to toggle process tree view — see parent-child relationships
 ### ⚙️ F2 Setup Menu (Full htop Parity)
 Press `F2` to open the setup menu with 4 categories:
 - **Meters** - Configure header layout (CPU, Memory, Swap, Network, Tasks, Load, Uptime)
-- **Display Options** - 15 toggleable settings (tree view, highlight basename, shadow other users, show threads, detailed CPU time, vim keys, and more)
+- **Display Options** - 16 toggleable settings (tree view, highlight basename, shadow other users, show threads, detailed CPU time, vim keys, Irix mode, and more)
 - **Colors** - Choose from 23 built-in color schemes with **live preview**
 - **Columns** - Add/remove/reorder visible columns
 
@@ -236,6 +236,10 @@ All settings auto-save to `%APPDATA%/pstop/pstoprc` and restore on next launch. 
 
 Enable via `F2` > Display Options > **Vim-style keys**, or set `vim_keys=1` in your config file. Off by default.
 
+### Process CPU% above 100
+
+Like htop, the CPU% column counts one fully busy core as 100%, so a busy multi-threaded program (a VM, a compiler) can show 300% or more. The ceiling is 100% times the number of logical CPUs. If you prefer Task Manager style, where the whole machine is 100%, turn off `F2` > Display Options > **Irix mode**, or set `irix_mode=0` in your config file.
+
 | Key | Vim Mode Action | Replaces |
 |-----|----------------|----------|
 | `j` | Move down | *(new — default mode has no bare `j`)* |
@@ -290,7 +294,7 @@ Settings are saved automatically to:
 
 Format: simple `key=value` (htoprc-style). Persisted settings include:
 - Color scheme
-- All 15 display options (including vim keys mode)
+- All 16 display options (including vim keys mode and Irix mode)
 - Visible columns
 - Sort field & direction
 - Update interval

@@ -31,6 +31,7 @@ pub struct PstopConfig {
     pub header_margin: bool,
     pub detailed_cpu_time: bool,
     pub cpu_count_from_zero: bool,
+    pub irix_mode: bool,
     pub update_process_names: bool,
     pub show_thread_names: bool,
     pub enable_mouse: bool,
@@ -67,6 +68,7 @@ impl Default for PstopConfig {
             header_margin: true,
             detailed_cpu_time: false,
             cpu_count_from_zero: false,
+            irix_mode: true,
             update_process_names: false,
             show_thread_names: false,
             enable_mouse: true,
@@ -129,6 +131,7 @@ impl PstopConfig {
                     "header_margin" => cfg.header_margin = value == "1",
                     "detailed_cpu_time" => cfg.detailed_cpu_time = value == "1",
                     "cpu_count_from_zero" => cfg.cpu_count_from_zero = value == "1",
+            "irix_mode" => cfg.irix_mode = value == "1",
                     "update_process_names" => cfg.update_process_names = value == "1",
                     "show_thread_names" => cfg.show_thread_names = value == "1",
                     "enable_mouse" => cfg.enable_mouse = value == "1",
@@ -218,6 +221,7 @@ impl PstopConfig {
         lines.push(format!("header_margin={}", b(self.header_margin)));
         lines.push(format!("detailed_cpu_time={}", b(self.detailed_cpu_time)));
         lines.push(format!("cpu_count_from_zero={}", b(self.cpu_count_from_zero)));
+        lines.push(format!("irix_mode={}", b(self.irix_mode)));
         lines.push(format!("update_process_names={}", b(self.update_process_names)));
         lines.push(format!("show_thread_names={}", b(self.show_thread_names)));
         lines.push(format!("enable_mouse={}", b(self.enable_mouse)));
@@ -284,6 +288,7 @@ impl PstopConfig {
             header_margin: app.header_margin,
             detailed_cpu_time: app.detailed_cpu_time,
             cpu_count_from_zero: app.cpu_count_from_zero,
+            irix_mode: app.irix_mode,
             update_process_names: app.update_process_names,
             show_thread_names: app.show_thread_names,
             enable_mouse: app.enable_mouse,
@@ -316,6 +321,7 @@ impl PstopConfig {
         app.header_margin = self.header_margin;
         app.detailed_cpu_time = self.detailed_cpu_time;
         app.cpu_count_from_zero = self.cpu_count_from_zero;
+        app.irix_mode = self.irix_mode;
         app.update_process_names = self.update_process_names;
         app.show_thread_names = self.show_thread_names;
         app.enable_mouse = self.enable_mouse;
